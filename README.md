@@ -1,22 +1,33 @@
 # evzero/valorant
 
-Compact frameless **overlay widget** for Valorant stats. Sits always-on-top in a corner of your screen, built to live alongside a borderless-windowed game session. Shares the [evzero.org/valorant](https://evzero.org/valorant/) backend.
+Compact frameless **overlay widget** for Valorant stats. Sits always-on-top alongside a borderless-windowed game session. Two layouts in one app: a **420×680 widget** for full info, a **300×150 HUD** for in-game glance. Shares the [evzero.org/valorant](https://evzero.org/valorant/) backend.
 
 ## Status
 
-**v0.2** — frameless overlay. 420×680 widget with custom titlebar, drag region, pinning, tray, global hotkey. Native search + match list talking directly to the proxy backend (no iframe).
+**v0.3** — feature pass. Live polling with new-match notifications, saved players, mode filter, expandable scoreboards, settings panel, overlay HUD mode.
 
-## What it does
+## Features
 
-- Compact always-on-top widget, frameless and clean
-- Search any Riot ID — name + tag + region
-- Profile card with current rank, peak rank, last-played agent
-- 10 most recent matches, one-line each, win/loss colour strip
-- Lives in your system tray, summon with `Ctrl+Shift+V`
-- Auto-restores the last player you looked up when reopened
-- Pin/unpin always-on-top from the titlebar
-- Optional launch at login
-- Drag from anywhere in the titlebar; click outside hides to tray
+**Widget mode** (420×680, frameless, always-on-top)
+- Profile card: PFP, name, rank, peak rank, recent agent
+- Stats summary row: WR / KDA / ACS / HS%
+- Mode filter: Comp / Unrated / DM / All — re-fetches the queue on switch
+- Match list (12 most recent), one-line each, click any to expand the full 10-player scoreboard inline
+- Saved players: pin a player → quick-search chip above the search row
+- Live mode: polls every 30s, visible countdown, fresh-row pulse + native OS notification when a new match lands
+- Settings popover (gear icon): pin, launch-at-login, notifications toggle, hotkey hint, version
+
+**Overlay HUD mode** (300×150, even more compact)
+- Toggle from the titlebar HUD button (or tray menu)
+- Just the essentials: rank icon, name, current rank, RR, last match result + KDA
+- Drag to position; fits in any corner of a 1920×1080 game without obscuring the centre
+- One-click back to widget mode
+
+**Common**
+- Custom titlebar with drag region, minimize, hide-to-tray, pin, HUD toggle, settings
+- Lives in the system tray, summon with `Ctrl+Shift+V`
+- Auto-restores last player on launch
+- Single-instance — re-launch focuses the existing window
 
 ## What it never does
 
@@ -27,9 +38,9 @@ This is the explicit non-goal list. None of these will ever be added.
 - ❌ Draw inside the Valorant render context
 - ❌ Simulate keyboard or mouse input
 - ❌ Require Administrator privileges
-- ❌ Use the Riot client local API or lockfile (gray-area, opt-out forever)
+- ❌ Use the Riot client local API or lockfile
 
-The widget is a regular Electron window with `alwaysOnTop`. Same pattern Discord/Spotify/OBS use — Vanguard does not flag this.
+The widget — including HUD mode — is a regular Electron window with `alwaysOnTop`. Same pattern Discord/Spotify/OBS use. Vanguard treats it as ordinary window chrome and ignores it entirely.
 
 ## Running locally
 
@@ -50,13 +61,22 @@ npm run make:win   # builds an NSIS installer in ./dist
 ```
 src/
 ├─ main/
-│  ├─ main.js     # window (frameless, alwaysOnTop), tray, hotkey, window-control IPC
-│  └─ preload.js  # contextBridge → window.evzero.* (8 calls, validated host whitelist)
+│  ├─ main.js     # frameless window + HUD-mode resize, tray, hotkey,
+│  │              # window-control IPC, native notifications
+│  └─ preload.js  # contextBridge → window.evzero.* (12 calls, host whitelist)
 └─ renderer/
-   ├─ index.html  # custom titlebar + compact widget UI
-   ├─ styles.css  # overlay-tuned: small type, glass titlebar, compact cards
-   └─ app.js      # search, profile render, match list — talks to the proxy directly
+   ├─ index.html  # widget UI + HUD shell + settings popover
+   ├─ styles.css  # both layouts; body.hud activates the HUD shell rules
+   └─ app.js      # search, profile + stats + matches, live mode, favs,
+                  # mode filter, scoreboard expand, HUD reactivity
 ```
+
+## Hotkeys
+
+| Action | Default |
+|---|---|
+| Show / hide widget | `Ctrl+Shift+V` |
+| Expand match row (when focused) | `Enter` / `Space` |
 
 ## Licence
 

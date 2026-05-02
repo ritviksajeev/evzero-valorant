@@ -1,7 +1,7 @@
 {
   "name": "evzero-valorant",
   "productName": "evzero/valorant",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Compact Valorant overlay — frameless always-on-top widget, system tray, global hotkey. Read-only, anti-cheat safe.",
   "main": "src/main/main.js",
   "type": "commonjs",

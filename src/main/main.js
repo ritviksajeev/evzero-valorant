@@ -16,7 +16,7 @@
    pattern Discord, Spotify, OBS, etc. use — Vanguard does not flag this.
    ============================================ */
 
-const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, shell, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, shell, ipcMain, screen, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -37,10 +37,19 @@ const WIN_H = 680;
 const WIN_MIN_W = 340;
 const WIN_MIN_H = 480;
 
+// HUD ("overlay") mode dimensions — tiny floating widget that sits at a corner
+// of the screen during gameplay. Just a smaller window state; no game-process
+// interaction, so Vanguard treats it identically to the full widget.
+const HUD_W = 300;
+const HUD_H = 150;
+
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let isPinned = true; // alwaysOnTop default — toggle via tray or in-app
+let isHud = false;   // overlay-HUD mode flag
+// Cached "normal" geometry so we can restore it when leaving HUD mode.
+let savedNormalBounds = null;
 
 function iconPath(name) {
   const p = path.join(__dirname, '..', '..', 'assets', name);
@@ -141,6 +150,12 @@ function buildTrayMenu() {
       checked: isPinned,
       click: (item) => setPinned(item.checked),
     },
+    {
+      label: 'Overlay HUD mode',
+      type: 'checkbox',
+      checked: isHud,
+      click: (item) => setHudMode(item.checked),
+    },
     { type: 'separator' },
     {
       label: 'Launch at login',
@@ -186,6 +201,57 @@ ipcMain.handle('evzero:window-minimize',   () => mainWindow?.minimize());
 ipcMain.handle('evzero:window-close',      () => mainWindow?.hide());
 ipcMain.handle('evzero:window-toggle-pin', () => setPinned(!isPinned));
 ipcMain.handle('evzero:window-get-pin',    () => isPinned);
+
+// Overlay-HUD mode — shrinks the window to a compact 300x150 widget pinned
+// to the top-right of the work area. Toggling back restores the previous
+// geometry so the user's drag position is preserved.
+function setHudMode(on) {
+  isHud = !!on;
+  if (!mainWindow) return isHud;
+  if (isHud) {
+    savedNormalBounds = mainWindow.getBounds();
+    const { workArea } = screen.getPrimaryDisplay();
+    mainWindow.setMinimumSize(220, 110);
+    mainWindow.setBounds({
+      x: workArea.x + workArea.width - HUD_W - 24,
+      y: workArea.y + 24,
+      width: HUD_W,
+      height: HUD_H,
+    }, true);
+    if (!isPinned) setPinned(true); // HUD always wants always-on-top
+  } else {
+    mainWindow.setMinimumSize(WIN_MIN_W, WIN_MIN_H);
+    if (savedNormalBounds) {
+      mainWindow.setBounds(savedNormalBounds, true);
+    } else {
+      mainWindow.setSize(WIN_W, WIN_H, true);
+    }
+  }
+  mainWindow.webContents.send('evzero:hud-changed', isHud);
+  tray?.setContextMenu(buildTrayMenu());
+  return isHud;
+}
+
+ipcMain.handle('evzero:hud-toggle', () => setHudMode(!isHud));
+ipcMain.handle('evzero:hud-get',    () => isHud);
+
+// Native OS notification — used when live mode detects a new match.
+ipcMain.handle('evzero:notify', (_e, opts) => {
+  if (!Notification.isSupported()) return false;
+  const o = (opts && typeof opts === 'object') ? opts : {};
+  // Strict whitelist of fields — never let the renderer drop in arbitrary
+  // payload like file paths or actions.
+  const n = new Notification({
+    title: String(o.title || 'evzero').slice(0, 80),
+    body:  String(o.body  || '').slice(0, 200),
+    silent: false,
+  });
+  n.on('click', () => {
+    if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
+  });
+  n.show();
+  return true;
+});
 
 ipcMain.handle('evzero:set-auto-launch', (_e, enabled) => {
   app.setLoginItemSettings({ openAtLogin: !!enabled });

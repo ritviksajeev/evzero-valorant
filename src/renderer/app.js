@@ -3,24 +3,30 @@
    ============================================
    Compact native widget UI. Talks to the same Henrik proxy as the website
    (https://ev-production.up.railway.app/val/*) but renders a tighter view
-   suited to a 420×680 always-on-top window.
+   suited to a 420×680 always-on-top window — plus a 300×150 HUD overlay
+   mode for in-game glance.
 
-   This file only uses the small `window.evzero.*` bridge exposed by
-   preload.js. No Node, no fs, no ipc directly.
+   Only uses the small `window.evzero.*` bridge exposed by preload.js.
+   No Node, no fs, no ipc directly.
    ============================================ */
 
 (function () {
   'use strict';
 
-  // ---- config ---------------------------------------------------------
+  // ---- Config --------------------------------------------------------
   const SERVER = 'https://ev-production.up.railway.app';
-  const STORAGE_LAST = 'evz-overlay-last';
-  const STORAGE_REGION = 'evz-overlay-region';
+  const STORAGE_LAST    = 'evz-overlay-last';
+  const STORAGE_REGION  = 'evz-overlay-region';
+  const STORAGE_FAVS    = 'evz-overlay-favs';
+  const STORAGE_MODE    = 'evz-overlay-mode';
+  const STORAGE_NOTIFY  = 'evz-overlay-notify';
+
+  const LIVE_INTERVAL_MS = 30_000;
 
   const AGENT_CDN = (uuid) =>
     uuid ? `https://media.valorant-api.com/agents/${uuid}/displayicon.png` : '';
-  const CARD_CDN = (uuid) =>
-    uuid ? `https://media.valorant-api.com/playercards/${uuid}/largeart.png` : '';
+  const CARD_PFP_CDN = (uuid) =>
+    uuid ? `https://media.valorant-api.com/playercards/${uuid}/smallart.png` : '';
   const TIER_TABLE = '03621f52-342b-cf4e-4f86-9350a49c6d04';
   const TIER_CDN = (tierId) =>
     (tierId == null) ? '' : `https://media.valorant-api.com/competitivetiers/${TIER_TABLE}/${tierId}/largeicon.png`;
@@ -32,34 +38,62 @@
   const tagInput = $('tag');
   const regionSelect = $('region');
   const searchBtn = $('search-btn');
+  const favBtn = $('fav-btn');
+  const liveBtn = $('live-btn');
+  const liveLabel = $('live-label');
 
   const statusEl = $('status');
   const statusText = statusEl.querySelector('.status-text');
+  const liveCountdown = $('live-countdown');
 
   const profileEl = $('profile');
-  const profileBg = $('profile-bg');
+  const profilePfp = $('profile-pfp');
   const profileName = $('profile-name');
   const metaLevel = $('meta-level');
   const metaRegion = $('meta-region');
+  const metaRecent = $('meta-recent');
+  const metaRecentImg = $('meta-recent-img');
   const rankIcon = $('rank-icon');
   const rankTier = $('rank-tier');
   const rankRr = $('rank-rr');
   const peakIcon = $('peak-icon');
   const peakTier = $('peak-tier');
   const peakMeta = $('peak-meta');
-  const recentAgent = $('recent-agent');
-  const recentAgentImg = $('recent-agent-img');
-  const recentAgentName = $('recent-agent-name');
+  const statWr = $('stat-wr');
+  const statKda = $('stat-kda');
+  const statAcs = $('stat-acs');
+  const statHs = $('stat-hs');
 
+  const modesBar = $('modes');
   const matchesBlock = $('matches-block');
   const matchesList = $('matches-list');
   const matchesCount = $('matches-count');
 
+  const favsWrap = $('favs');
+  const favsList = $('favs-list');
+
+  const tbSettings = $('tb-settings');
+  const tbHud = $('tb-hud');
   const tbPin = $('tb-pin');
   const tbMin = $('tb-min');
   const tbClose = $('tb-close');
+  const settingsPop = $('settings-pop');
+  const setPin = $('set-pin');
+  const setLaunch = $('set-launch');
+  const setNotify = $('set-notify');
+  const setVersion = $('set-version');
   const versionEl = $('version');
   const openWebBtn = $('open-web');
+
+  // HUD shell
+  const hudShell = $('hud-shell');
+  const hudX = $('hud-x');
+  const hudRankIcon = $('hud-rank-icon');
+  const hudName = $('hud-name');
+  const hudRank = $('hud-rank');
+  const hudRr = $('hud-rr');
+  const hudLastResult = $('hud-last-result');
+  const hudLastKda = $('hud-last-kda');
 
   const toastEl = $('toast');
   const toastTextEl = $('toast-text');
@@ -67,14 +101,68 @@
   // ---- Bridge --------------------------------------------------------
   const evz = window.evzero || {};
 
-  if (evz.getVersion) evz.getVersion().then((v) => versionEl.textContent = `v${v}`);
-  if (evz.windowGetPin) evz.windowGetPin().then((on) => tbPin.classList.toggle('active', !!on));
+  // Wire metadata + persisted toggles via the bridge.
+  if (evz.getVersion) {
+    evz.getVersion().then((v) => { versionEl.textContent = `v${v}`; setVersion.textContent = `v${v}`; });
+  }
+  if (evz.windowGetPin) {
+    evz.windowGetPin().then((on) => { tbPin.classList.toggle('active', !!on); setPin.checked = !!on; });
+  }
+  if (evz.getAutoLaunch) {
+    evz.getAutoLaunch().then((on) => { setLaunch.checked = !!on; });
+  }
+  if (evz.hudGet) {
+    evz.hudGet().then((on) => { applyHudUi(!!on); });
+  }
+  if (evz.onHudChanged) {
+    evz.onHudChanged((on) => applyHudUi(!!on));
+  }
+
+  // Notification preference is purely client-side (the main process never
+  // remembers it across launches).
+  let notifyOn = (localStorage.getItem(STORAGE_NOTIFY) || '1') === '1';
+  setNotify.checked = notifyOn;
+  setNotify.addEventListener('change', () => {
+    notifyOn = setNotify.checked;
+    localStorage.setItem(STORAGE_NOTIFY, notifyOn ? '1' : '0');
+  });
+
+  setPin.addEventListener('change', async () => {
+    const on = setPin.checked;
+    await evz.windowTogglePin?.();
+    // Re-sync from main in case the toggle didn't land where we expected.
+    const actual = await evz.windowGetPin?.();
+    setPin.checked = !!actual;
+    tbPin.classList.toggle('active', !!actual);
+  });
+  setLaunch.addEventListener('change', async () => {
+    const actual = await evz.setAutoLaunch?.(setLaunch.checked);
+    setLaunch.checked = !!actual;
+  });
+
+  tbSettings.addEventListener('click', (e) => {
+    e.stopPropagation();
+    settingsPop.hidden = !settingsPop.hidden;
+    tbSettings.classList.toggle('active', !settingsPop.hidden);
+  });
+  document.addEventListener('click', (e) => {
+    if (!settingsPop.hidden && !settingsPop.contains(e.target) && e.target !== tbSettings && !tbSettings.contains(e.target)) {
+      settingsPop.hidden = true;
+      tbSettings.classList.remove('active');
+    }
+  });
 
   tbPin.addEventListener('click', async () => {
-    if (!evz.windowTogglePin) return;
-    const pinned = await evz.windowTogglePin();
+    const pinned = await evz.windowTogglePin?.();
     tbPin.classList.toggle('active', !!pinned);
+    setPin.checked = !!pinned;
     toast(pinned ? 'Pinned on top' : 'Unpinned');
+  });
+  tbHud.addEventListener('click', async () => {
+    await evz.hudToggle?.();
+  });
+  hudX.addEventListener('click', async () => {
+    await evz.hudToggle?.();
   });
   tbMin.addEventListener('click', () => evz.windowMinimize?.());
   tbClose.addEventListener('click', () => evz.windowClose?.());
@@ -82,9 +170,16 @@
     evz.openExternal?.('https://evzero.org/valorant/');
   });
 
-  // ---- Toast helper ---------------------------------------------------
+  function applyHudUi(on) {
+    document.body.classList.toggle('hud', on);
+    hudShell.hidden = !on;
+    tbHud.classList.toggle('active', on);
+  }
+
+  // ---- Toast ---------------------------------------------------------
   let toastTimer = null;
   function toast(msg, ms = 1600) {
+    if (document.body.classList.contains('hud')) return; // no toast in HUD
     toastTextEl.textContent = msg;
     toastEl.hidden = false;
     void toastEl.offsetWidth;
@@ -101,38 +196,55 @@
     statusText.textContent = text;
   }
 
+  // ---- Utils ---------------------------------------------------------
   function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ));
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function timeAgo(t) {
+    const ms = typeof t === 'number' ? t : Date.parse(t);
+    if (!ms || Number.isNaN(ms)) return '—';
+    const d = (Date.now() - ms) / 1000;
+    if (d < 60) return `${Math.floor(d)}s`;
+    if (d < 3600) return `${Math.floor(d / 60)}m`;
+    if (d < 86_400) return `${Math.floor(d / 3600)}h`;
+    if (d < 604_800) return `${Math.floor(d / 86_400)}d`;
+    return `${Math.floor(d / 604_800)}w`;
+  }
+  function fmtPct(n, d = 0) {
+    if (!Number.isFinite(n)) return '—';
+    return `${(n * 100).toFixed(d)}%`;
+  }
+  function fmtNum(n, d = 0) {
+    if (!Number.isFinite(n)) return '—';
+    return n.toFixed(d);
+  }
+  function matchStartMs(m) {
+    const md = m && m.metadata || {};
+    if (typeof md.game_start === 'number')   return md.game_start * 1000;
+    if (typeof md.started_at === 'string')   return Date.parse(md.started_at) || 0;
+    return 0;
+  }
+  function matchId(m) {
+    const md = m && m.metadata || {};
+    return md.matchid || md.match_id || md.game_id || String(matchStartMs(m) || '');
   }
 
-  function timeAgo(isoOrMs) {
-    const t = typeof isoOrMs === 'number' ? isoOrMs : Date.parse(isoOrMs);
-    if (!t || Number.isNaN(t)) return '—';
-    const diff = (Date.now() - t) / 1000;
-    if (diff < 60)       return `${Math.floor(diff)}s ago`;
-    if (diff < 3600)     return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86_400)   return `${Math.floor(diff / 3600)}h ago`;
-    if (diff < 604_800)  return `${Math.floor(diff / 86_400)}d ago`;
-    return `${Math.floor(diff / 604_800)}w ago`;
-  }
-
-  // ---- Proxy helper ---------------------------------------------------
+  // ---- Proxy ---------------------------------------------------------
   async function proxy(path, params) {
     const qs = new URLSearchParams(params);
     let res;
     try {
       res = await fetch(`${SERVER}${path}?${qs}`);
-    } catch (netErr) {
-      const err = new Error('Cannot reach tracker backend');
+    } catch {
+      const err = new Error('Backend unreachable');
       err.status = 0;
       throw err;
     }
     let body;
     try { body = await res.json(); } catch { body = null; }
     if (!res.ok) {
-      const msg = (body && (body.error || (body.errors && body.errors[0] && body.errors[0].message))) || `HTTP ${res.status}`;
+      const msg = (body && (body.error || body.errors?.[0]?.message)) || `HTTP ${res.status}`;
       const err = new Error(msg);
       err.status = res.status;
       throw err;
@@ -140,13 +252,12 @@
     return body;
   }
 
-  // ---- Match helpers --------------------------------------------------
+  // ---- Match helpers -------------------------------------------------
   function findSelf(match, puuid) {
     const players = match.players && (match.players.all_players || match.players);
     if (!Array.isArray(players)) return null;
     return players.find((p) => p && p.puuid === puuid) || null;
   }
-
   function matchResult(match, self) {
     if (!self || !match.teams) return 'unknown';
     const teams = Array.isArray(match.teams) ? match.teams : Object.values(match.teams);
@@ -162,17 +273,89 @@
     if (won < lost) return 'loss';
     return 'draw';
   }
+  function roundCount(match) {
+    const teams = match.teams;
+    if (!teams) return 0;
+    const list = Array.isArray(teams) ? teams : Object.values(teams);
+    let total = 0;
+    for (const t of list) {
+      total += (t.rounds?.won ?? t.rounds_won) || 0;
+      total += (t.rounds?.lost ?? t.rounds_lost) || 0;
+    }
+    return total || (match.rounds && match.rounds.length) || 0;
+  }
+  function allPlayers(match) {
+    const p = match && match.players;
+    if (!p) return [];
+    if (Array.isArray(p)) return p;
+    if (Array.isArray(p.all_players)) return p.all_players;
+    return [];
+  }
+  function resolvePlayerIdentity(p) {
+    if (!p || typeof p !== 'object') return null;
+    const trim = (v) => (typeof v === 'string' ? v.trim() : '');
+    let name = trim(p.name) || trim(p.gameName) || trim(p.displayName);
+    let tag  = trim(p.tag)  || trim(p.tagLine);
+    if (!name && p.riot_id && typeof p.riot_id === 'object') {
+      name = trim(p.riot_id.name) || trim(p.riot_id.gameName);
+      tag  = tag || trim(p.riot_id.tag) || trim(p.riot_id.tagLine);
+    }
+    if (!name && typeof p.riot_id === 'string' && p.riot_id.includes('#')) {
+      const [n, t] = p.riot_id.split('#');
+      name = trim(n);
+      tag  = tag || trim(t);
+    }
+    if (!name) return null;
+    return { name, tag };
+  }
 
-  // ---- Render ---------------------------------------------------------
-  function renderProfile(account, mmr, matches) {
+  // ---- Aggregate stats over the match set ----------------------------
+  function aggregate(matches, puuid) {
+    let wins = 0, losses = 0, draws = 0;
+    let k = 0, d = 0, a = 0;
+    let hs = 0, bs = 0, ls = 0;
+    let score = 0, rounds = 0;
+    for (const m of matches) {
+      const self = findSelf(m, puuid);
+      if (!self) continue;
+      const r = matchResult(m, self);
+      if (r === 'win') wins++;
+      else if (r === 'loss') losses++;
+      else if (r === 'draw') draws++;
+      const s = self.stats || {};
+      k += s.kills || 0;
+      d += s.deaths || 0;
+      a += s.assists || 0;
+      hs += s.headshots || 0;
+      bs += s.bodyshots || 0;
+      ls += s.legshots || 0;
+      score += s.score || 0;
+      rounds += roundCount(m);
+    }
+    const played = wins + losses + draws;
+    const shots = hs + bs + ls;
+    return {
+      played, wins, losses,
+      winrate: played ? wins / (wins + losses || played) : NaN,
+      kda: d ? (k + a) / d : NaN,
+      acs: rounds ? score / rounds : NaN,
+      hsPct: shots ? hs / shots : NaN,
+    };
+  }
+
+  // ---- Render --------------------------------------------------------
+  function renderProfile(account, mmr, matches, fallbackName, fallbackTag) {
     const cardUuid = typeof account?.card === 'string' ? account.card : (account?.card?.id || '');
-    const cardUrl = cardUuid ? CARD_CDN(cardUuid) : '';
-    profileBg.style.backgroundImage = cardUrl ? `url("${cardUrl}")` : 'none';
+    const pfpUrl = cardUuid ? CARD_PFP_CDN(cardUuid) : '';
+    if (pfpUrl) profilePfp.src = pfpUrl; else profilePfp.removeAttribute('src');
 
-    profileName.textContent = `${account?.name || '—'}${account?.tag ? `#${account.tag}` : ''}`;
-    metaLevel.textContent = `Level ${account?.account_level ?? '—'}`;
+    const resolvedName = account?.name || fallbackName || '';
+    const resolvedTag  = account?.tag  || fallbackTag  || '';
+    profileName.textContent = `${resolvedName || '—'}${resolvedTag ? ` #${resolvedTag}` : ''}`;
+    metaLevel.textContent = `Lvl ${account?.account_level ?? '—'}`;
     metaRegion.textContent = (account?.region || '—').toUpperCase();
 
+    // Current rank
     const cur = mmr?.current;
     if (cur) {
       rankTier.textContent = cur.tier?.name || cur.currenttierpatched || 'Unranked';
@@ -189,6 +372,7 @@
       rankIcon.removeAttribute('src');
     }
 
+    // Peak rank
     const peak = mmr?.peak;
     if (peak) {
       peakTier.textContent = peak.tier?.name || '—';
@@ -202,28 +386,85 @@
       peakIcon.removeAttribute('src');
     }
 
-    // Recent agent
+    // Recent agent — image only with hover title
     const recent = Array.isArray(matches)
       ? matches.map((m) => ({ m, self: findSelf(m, account?.puuid) })).find((x) => x.self)
       : null;
     if (recent && recent.self) {
       const rid = (recent.self.agent && recent.self.agent.id) || recent.self.character_id || '';
-      const rname = (recent.self.agent && recent.self.agent.name) || recent.self.character || '—';
+      const rname = (recent.self.agent && recent.self.agent.name) || recent.self.character || '';
       if (rid) {
-        recentAgentImg.src = AGENT_CDN(rid);
-        recentAgentName.textContent = rname;
-        recentAgent.hidden = false;
+        metaRecentImg.src = AGENT_CDN(rid);
+        metaRecentImg.title = rname || '';
+        metaRecent.hidden = false;
       } else {
-        recentAgent.hidden = true;
+        metaRecent.hidden = true;
       }
     } else {
-      recentAgent.hidden = true;
+      metaRecent.hidden = true;
     }
 
+    // Stats summary row
+    const agg = aggregate(matches || [], account?.puuid);
+    statWr.textContent  = Number.isFinite(agg.winrate) ? `${(agg.winrate * 100).toFixed(0)}%` : '—';
+    statKda.textContent = Number.isFinite(agg.kda) ? agg.kda.toFixed(2) : '—';
+    statAcs.textContent = Number.isFinite(agg.acs) ? Math.round(agg.acs) : '—';
+    statHs.textContent  = Number.isFinite(agg.hsPct) ? `${(agg.hsPct * 100).toFixed(0)}%` : '—';
+
     profileEl.hidden = false;
+    modesBar.hidden = false;
+
+    // HUD: also push current state into the HUD shell so it's ready when toggled.
+    hudName.textContent = `${resolvedName || '—'}${resolvedTag ? `#${resolvedTag}` : ''}`;
+    hudRank.textContent = rankTier.textContent;
+    hudRr.textContent = rankRr.textContent;
+    if (rankIcon.getAttribute('src')) hudRankIcon.src = rankIcon.src; else hudRankIcon.removeAttribute('src');
+
+    if (recent) {
+      const r = matchResult(recent.m, recent.self);
+      const s = recent.self.stats || {};
+      hudLastResult.textContent = r === 'win' ? 'WIN' : r === 'loss' ? 'LOSS' : '—';
+      hudLastResult.className = 'hud-last-result ' + (r === 'win' ? 'win' : r === 'loss' ? 'loss' : '');
+      hudLastKda.textContent = `${s.kills ?? 0}/${s.deaths ?? 0}/${s.assists ?? 0}`;
+    } else {
+      hudLastResult.textContent = '—';
+      hudLastResult.className = 'hud-last-result';
+      hudLastKda.textContent = '—';
+    }
   }
 
-  function renderMatches(matches, puuid) {
+  function renderScoreboard(match, puuid) {
+    const players = allPlayers(match);
+    if (!players.length) return '<div class="match-empty">No scoreboard data.</div>';
+    const totalRounds = roundCount(match) || 1;
+    const allAnon = players.every((p) => !resolvePlayerIdentity(p));
+    return players
+      .slice()
+      .sort((a, b) => (b.stats?.score ?? 0) - (a.stats?.score ?? 0))
+      .map((p, idx) => {
+        const aid = (p.agent && p.agent.id) || p.character_id || '';
+        const aname = (p.agent && p.agent.name) || p.character || '';
+        const self = p.puuid === puuid;
+        const s = p.stats || {};
+        const acs = (s.score && totalRounds) ? Math.round(s.score / totalRounds) : null;
+        let id = resolvePlayerIdentity(p);
+        if (!id && self && lastCtx?.name) id = { name: lastCtx.name, tag: lastCtx.tag || '' };
+        const nameHtml = id
+          ? esc(id.name) + (id.tag ? ` <span class="anon">#${esc(id.tag)}</span>` : '')
+          : `<span class="anon">${esc(aname || `Player ${idx + 1}`)}</span>`;
+        return `
+          <div class="match-row ${self ? 'self' : ''}">
+            ${aid ? `<img src="${esc(AGENT_CDN(aid))}" alt="${esc(aname)}" title="${esc(aname)}"/>` : '<div></div>'}
+            <div class="match-row-name">${nameHtml}</div>
+            <div class="match-row-acs">${acs ?? '—'}</div>
+            <div class="match-row-kda">${s.kills ?? 0}/${s.deaths ?? 0}/${s.assists ?? 0}</div>
+          </div>
+        `;
+      })
+      .join('') + (allAnon ? '<div class="match-empty" style="margin-top:6px;">Player names hidden by Riot for this match.</div>' : '');
+  }
+
+  function renderMatches(matches, puuid, freshIds = new Set()) {
     if (!matches.length) {
       matchesList.innerHTML = '<div class="match-empty">No recent matches.</div>';
       matchesCount.textContent = '0';
@@ -231,7 +472,7 @@
       return;
     }
     matchesCount.textContent = String(matches.length);
-    matchesList.innerHTML = matches.slice(0, 10).map((m) => {
+    matchesList.innerHTML = matches.slice(0, 12).map((m, idx) => {
       const self = findSelf(m, puuid);
       if (!self) return '';
       const s = self.stats || {};
@@ -239,67 +480,235 @@
       const mapName = (m.metadata && (m.metadata.map?.name || m.metadata.map)) || 'Unknown';
       const started = m.metadata && (m.metadata.started_at || m.metadata.game_start_patched || m.metadata.game_start);
       const aid = (self.agent && self.agent.id) || self.character_id || '';
+      const fresh = freshIds.has(matchId(m));
       return `
-        <div class="match" data-result="${r}">
-          <div class="match-strip"></div>
-          ${aid ? `<img class="match-agent" src="${esc(AGENT_CDN(aid))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"/>` : '<div class="match-agent"></div>'}
-          <div class="match-meta">
-            <div class="match-map">${esc(mapName)}</div>
-            <div class="match-sub">${esc(timeAgo(started))}  ·  ${r}</div>
+        <div class="match-wrap${fresh ? ' fresh' : ''}" data-result="${r}" data-idx="${idx}">
+          <div class="match" tabindex="0" role="button" aria-expanded="false">
+            <div class="match-strip"></div>
+            ${aid ? `<img class="match-agent" src="${esc(AGENT_CDN(aid))}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"/>` : '<div class="match-agent"></div>'}
+            <div class="match-meta">
+              <div class="match-map">${esc(mapName)}</div>
+              <div class="match-sub">${timeAgo(started)} · ${r}</div>
+            </div>
+            <div class="match-kda">${s.kills ?? 0}<span class="sep">/</span>${s.deaths ?? 0}<span class="sep">/</span>${s.assists ?? 0}</div>
+            <div class="match-chev">
+              <svg viewBox="0 0 16 16" width="11" height="11"><path d="M3 6l5 5 5-5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
           </div>
-          <div class="match-kda">${s.kills ?? 0}<span class="sep">/</span>${s.deaths ?? 0}<span class="sep">/</span>${s.assists ?? 0}</div>
+          <div class="match-details"><div class="match-details-inner"><div class="match-details-body" data-rendered="0"></div></div></div>
         </div>
       `;
     }).join('');
     matchesBlock.hidden = false;
+
+    // Lazy scoreboard render on row expand
+    matchesList.querySelectorAll('.match-wrap').forEach((wrap) => {
+      const header = wrap.querySelector('.match');
+      const body = wrap.querySelector('.match-details-body');
+      const toggle = () => {
+        const willOpen = !wrap.classList.contains('open');
+        if (willOpen && body.dataset.rendered !== '1') {
+          const i = Number(wrap.dataset.idx);
+          body.innerHTML = renderScoreboard(matches[i], puuid);
+          body.dataset.rendered = '1';
+        }
+        wrap.classList.toggle('open', willOpen);
+        header.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+      };
+      header.addEventListener('click', toggle);
+      header.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+      });
+    });
   }
 
-  // ---- Search flow ----------------------------------------------------
-  let inFlight = 0;
+  // ---- Favourites ----------------------------------------------------
+  function readFavs() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_FAVS) || '[]'); }
+    catch { return []; }
+  }
+  function writeFavs(list) {
+    try { localStorage.setItem(STORAGE_FAVS, JSON.stringify(list)); } catch { /* quota */ }
+  }
+  const favKey = (n, t) => `${n}#${t}`.toLowerCase();
+  const isFav = (n, t) => readFavs().some((f) => favKey(f.name, f.tag) === favKey(n, t));
+  function addFav(e) {
+    const list = readFavs().filter((f) => favKey(f.name, f.tag) !== favKey(e.name, e.tag));
+    list.unshift(e);
+    writeFavs(list.slice(0, 6));
+    renderFavs();
+  }
+  function removeFav(n, t) {
+    writeFavs(readFavs().filter((f) => favKey(f.name, f.tag) !== favKey(n, t)));
+    renderFavs();
+  }
+  function renderFavs() {
+    const list = readFavs();
+    if (!list.length) { favsWrap.hidden = true; favsList.innerHTML = ''; return; }
+    favsWrap.hidden = false;
+    favsList.innerHTML = list.map((f) => `
+      <button type="button" class="fav-chip" data-name="${esc(f.name)}" data-tag="${esc(f.tag)}" data-region="${esc(f.region)}">
+        <span>${esc(f.name)}</span>
+        <span class="fav-chip-x" data-x="1" title="Remove">×</span>
+      </button>
+    `).join('');
+  }
+  favsList.addEventListener('click', (e) => {
+    const chip = e.target.closest('.fav-chip');
+    if (!chip) return;
+    const name = chip.dataset.name, tag = chip.dataset.tag, region = chip.dataset.region;
+    if (e.target.dataset.x) { removeFav(name, tag); return; }
+    nameInput.value = name;
+    tagInput.value = tag;
+    if ([...regionSelect.options].some((o) => o.value === region)) regionSelect.value = region;
+    runSearch(name, tag, region);
+  });
+  function refreshFavBtn() {
+    if (!lastCtx) {
+      favBtn.classList.remove('saved');
+      return;
+    }
+    favBtn.classList.toggle('saved', isFav(lastCtx.name, lastCtx.tag));
+  }
+  favBtn.addEventListener('click', () => {
+    if (!lastCtx) { toast('Search first'); return; }
+    if (isFav(lastCtx.name, lastCtx.tag)) {
+      removeFav(lastCtx.name, lastCtx.tag);
+      toast('Removed');
+    } else {
+      addFav({ name: lastCtx.name, tag: lastCtx.tag, region: lastCtx.region });
+      toast('Saved');
+    }
+    refreshFavBtn();
+  });
 
-  async function runSearch(name, tag, region) {
+  // ---- Mode filter ---------------------------------------------------
+  let currentMode = localStorage.getItem(STORAGE_MODE) || 'competitive';
+  function applyModeUi() {
+    modesBar.querySelectorAll('.mode-pill').forEach((p) => {
+      p.classList.toggle('active', (p.dataset.mode || '') === currentMode);
+    });
+  }
+  modesBar.addEventListener('click', (e) => {
+    const pill = e.target.closest('.mode-pill');
+    if (!pill) return;
+    const next = pill.dataset.mode || '';
+    if (next === currentMode) return;
+    currentMode = next;
+    localStorage.setItem(STORAGE_MODE, currentMode);
+    applyModeUi();
+    if (lastCtx) {
+      toast(`Loading ${pill.textContent.trim()}…`);
+      runSearch(lastCtx.name, lastCtx.tag, lastCtx.region);
+    } else {
+      toast('Search first');
+    }
+  });
+  applyModeUi();
+
+  // ---- Search flow ---------------------------------------------------
+  let inFlight = 0;
+  let lastCtx = null;
+
+  async function runSearch(name, tag, region, opts = {}) {
+    const { silent = false, fromLive = false } = opts;
     const token = ++inFlight;
-    setStatus('loading', 'Fetching…');
-    searchBtn.disabled = true;
+    if (!silent) {
+      setStatus('loading', 'Fetching…');
+      searchBtn.disabled = true;
+    }
 
     try {
-      const accountRes = await proxy('/val/account', { name, tag });
-      if (token !== inFlight) return;
-      const account = accountRes?.data;
-      if (!account || !account.puuid) throw new Error('Player not found');
+      let account;
+      try {
+        const accountRes = await proxy('/val/account', { name, tag });
+        if (token !== inFlight) return;
+        account = accountRes?.data;
+        if (!account || !account.puuid) throw new Error('Not found');
+      } catch (accErr) {
+        const sameAsLast = lastCtx
+          && lastCtx.name.toLowerCase() === name.toLowerCase()
+          && lastCtx.tag.toLowerCase()  === tag.toLowerCase()
+          && lastCtx.account;
+        if (sameAsLast) {
+          account = lastCtx.account;
+        } else {
+          throw accErr;
+        }
+      }
 
       const resolvedRegion = (account.region || region).toLowerCase();
+      const matchParams = { region: resolvedRegion, platform: 'pc', name, tag, size: 12 };
+      if (currentMode) matchParams.mode = currentMode;
 
       const [mmrRes, matchesRes] = await Promise.all([
         proxy('/val/mmr', { region: resolvedRegion, platform: 'pc', name, tag }).catch((e) => ({ __err: e })),
-        proxy('/val/matches', { region: resolvedRegion, platform: 'pc', name, tag, size: 10, mode: 'competitive' }).catch((e) => ({ __err: e })),
+        proxy('/val/matches', matchParams).catch((e) => ({ __err: e })),
       ]);
       if (token !== inFlight) return;
 
       const mmr = mmrRes && !mmrRes.__err ? mmrRes.data : null;
       const matches = (matchesRes && !matchesRes.__err && Array.isArray(matchesRes.data)) ? matchesRes.data : [];
 
-      renderProfile(account, mmr, matches);
-      renderMatches(matches, account.puuid);
+      // Detect new matches vs previous state for fresh animation + notification.
+      const prevIds = fromLive && lastCtx ? lastCtx.matchIds : null;
+      const freshIds = new Set();
+      if (prevIds) {
+        for (const m of matches) {
+          const id = matchId(m);
+          if (id && !prevIds.has(id)) freshIds.add(id);
+        }
+      }
 
-      setStatus('ok', `${account.name}#${account.tag}`);
-      localStorage.setItem(STORAGE_LAST, `${account.name}#${account.tag}`);
+      renderProfile(account, mmr, matches, name, tag);
+      renderMatches(matches, account.puuid, freshIds);
+
+      const ctxName = account.name || name;
+      const ctxTag  = account.tag  || tag;
+      lastCtx = {
+        name: ctxName,
+        tag: ctxTag,
+        region: resolvedRegion,
+        puuid: account.puuid,
+        matchIds: new Set(matches.map(matchId).filter(Boolean)),
+        account,
+      };
+      lastUpdatedAt = Date.now();
+      refreshFavBtn();
+
+      if (fromLive && freshIds.size > 0) {
+        const newest = matches[0];
+        const self = findSelf(newest, account.puuid);
+        const r = matchResult(newest, self);
+        const map = (newest.metadata && (newest.metadata.map?.name || newest.metadata.map)) || 'a match';
+        const txt = `${r === 'win' ? 'WIN' : r === 'loss' ? 'LOSS' : 'Match'} on ${map}`;
+        toast(`+${freshIds.size} new — ${txt}`);
+        if (notifyOn) {
+          evz.notify?.({ title: `evzero · ${ctxName}#${ctxTag}`, body: txt });
+        }
+      }
+
+      if (!silent) setStatus('ok', `${ctxName}#${ctxTag}`);
+      localStorage.setItem(STORAGE_LAST, `${ctxName}#${ctxTag}`);
       localStorage.setItem(STORAGE_REGION, resolvedRegion);
     } catch (err) {
       if (token !== inFlight) return;
-      const msg = err.status === 0
-        ? 'Backend unreachable'
-        : err.status === 404
-          ? 'Player not found'
-          : err.status === 503
-            ? 'Tracker offline'
+      if (silent) {
+        console.warn('[evz] silent refresh failed', err);
+      } else {
+        const msg = err.status === 0
+          ? 'Backend unreachable'
+          : err.status === 404
+            ? 'Player not found'
             : err.status === 429
               ? 'Rate limited'
               : (err.message || 'Error');
-      setStatus('error', msg);
-      console.error('[evz]', err);
+        setStatus('error', msg);
+      }
     } finally {
-      if (token === inFlight) searchBtn.disabled = false;
+      if (token === inFlight) {
+        if (!silent) searchBtn.disabled = false;
+      }
     }
   }
 
@@ -314,23 +723,74 @@
     }
     runSearch(name, tag, region);
   });
-
   regionSelect.addEventListener('change', () => {
     localStorage.setItem(STORAGE_REGION, regionSelect.value);
   });
 
-  // ---- Bootstrap ------------------------------------------------------
-  const lastRiot = localStorage.getItem(STORAGE_LAST);
+  // ---- Live mode -----------------------------------------------------
+  let liveMode = false;
+  let livePollTimer = null;
+  let liveCountdownTimer = null;
+  let nextPollAt = 0;
+  let lastUpdatedAt = 0;
+
+  function refreshCountdown() {
+    if (!liveMode) { liveCountdown.hidden = true; return; }
+    const remaining = Math.max(0, Math.ceil((nextPollAt - Date.now()) / 1000));
+    if (document.hidden) {
+      liveCountdown.textContent = 'Live · paused';
+    } else {
+      liveCountdown.textContent = `Next in ${remaining}s`;
+    }
+    liveCountdown.hidden = false;
+  }
+  async function livePoll() {
+    if (!liveMode || !lastCtx || document.hidden) return;
+    nextPollAt = Date.now() + LIVE_INTERVAL_MS;
+    refreshCountdown();
+    await runSearch(lastCtx.name, lastCtx.tag, lastCtx.region, { silent: true, fromLive: true });
+    refreshCountdown();
+  }
+  function setLive(on) {
+    liveMode = !!on;
+    clearInterval(livePollTimer);
+    clearInterval(liveCountdownTimer);
+    if (liveMode) {
+      liveBtn.classList.add('active');
+      liveLabel.textContent = 'Live';
+      nextPollAt = Date.now() + LIVE_INTERVAL_MS;
+      refreshCountdown();
+      livePoll();
+      livePollTimer = setInterval(livePoll, LIVE_INTERVAL_MS);
+      liveCountdownTimer = setInterval(refreshCountdown, 1000);
+      toast('Live ON · refreshing every 30s');
+    } else {
+      liveBtn.classList.remove('active');
+      liveLabel.textContent = 'Live';
+      liveCountdown.hidden = true;
+      toast('Live OFF');
+    }
+  }
+  liveBtn.addEventListener('click', () => {
+    if (!lastCtx) { toast('Search first'); return; }
+    setLive(!liveMode);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (liveMode && !document.hidden) { livePoll(); refreshCountdown(); }
+  });
+
+  // ---- Bootstrap -----------------------------------------------------
+  renderFavs();
   const lastRegion = localStorage.getItem(STORAGE_REGION) || 'ap';
   if ([...regionSelect.options].some((o) => o.value === lastRegion)) {
     regionSelect.value = lastRegion;
   }
+  const lastRiot = localStorage.getItem(STORAGE_LAST);
   if (lastRiot && lastRiot.includes('#')) {
     const [n, t] = lastRiot.split('#').map((s) => s.trim());
     if (n && t) {
       nameInput.value = n;
       tagInput.value = t;
-      // Auto-search the last-known player so opening the widget shows fresh stats.
       setTimeout(() => runSearch(n, t, regionSelect.value), 200);
     } else {
       setStatus('idle', 'Idle');

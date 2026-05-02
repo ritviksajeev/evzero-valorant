@@ -6,19 +6,25 @@
   <title>evzero/valorant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Unbounded:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Unbounded:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
   <div class="bg" aria-hidden="true"></div>
 
-  <!-- Custom titlebar — the entire bar is draggable except buttons. -->
+  <!-- Custom titlebar — entire bar is draggable except buttons. -->
   <header class="titlebar" id="titlebar">
     <div class="titlebar-brand">
       <span class="titlebar-mark">evzero</span>
       <span class="titlebar-tag">/ valorant</span>
     </div>
     <div class="titlebar-controls">
+      <button class="tb-btn tb-settings" id="tb-settings" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 16 16" width="12" height="12"><path fill="currentColor" d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Zm6.4 2.5c0 .35-.03.69-.08 1.02l1.55 1.21a.4.4 0 0 1 .09.5l-1.47 2.54a.4.4 0 0 1-.49.17l-1.83-.74c-.38.29-.79.53-1.24.71l-.27 1.95a.4.4 0 0 1-.4.34h-2.94a.4.4 0 0 1-.4-.34l-.27-1.95a5.6 5.6 0 0 1-1.24-.71l-1.83.74a.4.4 0 0 1-.49-.17L1.62 11.23a.4.4 0 0 1 .09-.5l1.55-1.21A6.4 6.4 0 0 1 3.18 9c0-.34.03-.68.08-1.02L1.71 6.77a.4.4 0 0 1-.09-.5l1.47-2.54a.4.4 0 0 1 .49-.17l1.83.74c.38-.29.79-.53 1.24-.71l.27-1.95A.4.4 0 0 1 7.32 1.3h2.94a.4.4 0 0 1 .4.34l.27 1.95c.45.18.86.42 1.24.71l1.83-.74a.4.4 0 0 1 .49.17l1.47 2.54a.4.4 0 0 1-.09.5l-1.55 1.21c.05.34.08.68.08 1.02Z"/></svg>
+      </button>
+      <button class="tb-btn tb-hud" id="tb-hud" title="Toggle overlay HUD mode" aria-label="HUD mode">
+        <svg viewBox="0 0 16 16" width="12" height="12"><rect x="2" y="2" width="12" height="8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="11" width="5" height="3" rx="0.8" fill="currentColor"/></svg>
+      </button>
       <button class="tb-btn tb-pin" id="tb-pin" title="Toggle always-on-top" aria-label="Pin">
         <svg viewBox="0 0 16 16" width="11" height="11"><path fill="currentColor" d="M9.5 1.5l5 5-2 .5-1 1 1 4-4-4-4 4 .5-3.5L1 6l4-1 1-1L6 1.5l3.5 0z"/></svg>
       </button>
@@ -31,7 +37,45 @@
     </div>
   </header>
 
-  <main class="content">
+  <!-- Settings dropdown — anchored under the gear button -->
+  <div class="settings-pop" id="settings-pop" hidden>
+    <div class="settings-row">
+      <label class="settings-label">
+        <input type="checkbox" id="set-pin"/>
+        <span>Always on top</span>
+      </label>
+    </div>
+    <div class="settings-row">
+      <label class="settings-label">
+        <input type="checkbox" id="set-launch"/>
+        <span>Launch at login</span>
+      </label>
+    </div>
+    <div class="settings-row">
+      <label class="settings-label">
+        <input type="checkbox" id="set-notify"/>
+        <span>Notifications on new match</span>
+      </label>
+    </div>
+    <div class="settings-divider"></div>
+    <div class="settings-static">
+      <span class="settings-static-label">Summon</span>
+      <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>
+    </div>
+    <div class="settings-static">
+      <span class="settings-static-label">Version</span>
+      <span id="set-version">v—</span>
+    </div>
+  </div>
+
+  <main class="content" id="content">
+
+    <!-- Saved players quick chips -->
+    <section class="favs" id="favs" hidden>
+      <span class="favs-label">Saved</span>
+      <div class="favs-list" id="favs-list"></div>
+    </section>
+
     <!-- Search row -->
     <form class="search" id="search" autocomplete="off">
       <div class="search-row">
@@ -47,52 +91,88 @@
           <option value="br">BR</option>
         </select>
       </div>
-      <button id="search-btn" class="search-btn" type="submit">
-        <span>Search</span>
-        <span class="arrow">&rarr;</span>
-      </button>
+      <div class="search-actions">
+        <button id="search-btn" class="search-btn" type="submit">
+          <span>Search</span>
+          <span class="arrow">&rarr;</span>
+        </button>
+        <button id="fav-btn" class="search-fav" type="button" title="Save current player">
+          <svg viewBox="0 0 16 16" width="14" height="14"><path fill="currentColor" d="M8 1.5l1.93 4.07L14.5 6.27l-3.4 3.13.86 4.6L8 11.85 4.04 14l.86-4.6L1.5 6.27l4.57-.7L8 1.5Z"/></svg>
+        </button>
+        <button id="live-btn" class="search-live" type="button" title="Auto-refresh every 30s">
+          <span class="live-dot"></span>
+          <span class="live-label" id="live-label">Live</span>
+        </button>
+      </div>
     </form>
 
-    <!-- Status pill -->
-    <div class="status idle" id="status">
-      <span class="status-dot"></span>
-      <span class="status-text">Idle</span>
+    <!-- Status pill + live countdown -->
+    <div class="status-row">
+      <div class="status idle" id="status">
+        <span class="status-dot"></span>
+        <span class="status-text">Idle</span>
+      </div>
+      <div class="live-countdown" id="live-countdown" hidden>Next in 30s</div>
     </div>
 
     <!-- Profile card -->
     <section class="profile" id="profile" hidden>
-      <div class="profile-bg" id="profile-bg"></div>
-      <div class="profile-overlay"></div>
-      <div class="profile-inner">
-        <div class="profile-name" id="profile-name">&mdash;</div>
-        <div class="profile-meta">
-          <span class="meta-chip" id="meta-level">Level &mdash;</span>
-          <span class="meta-chip" id="meta-region">&mdash;</span>
+      <div class="profile-head">
+        <img class="profile-pfp" id="profile-pfp" alt="" width="56" height="56"/>
+        <div class="profile-id">
+          <div class="profile-name" id="profile-name">&mdash;</div>
+          <div class="profile-meta">
+            <span class="meta-chip" id="meta-level">Level &mdash;</span>
+            <span class="meta-chip" id="meta-region">&mdash;</span>
+            <span class="meta-chip meta-recent" id="meta-recent" hidden>
+              <span class="meta-recent-label">Last:</span>
+              <img id="meta-recent-img" alt="" title="" width="16" height="16"/>
+            </span>
+          </div>
         </div>
-        <div class="rank-row">
-          <div class="rank-item">
-            <img class="rank-icon" id="rank-icon" alt="" width="48" height="48"/>
+      </div>
+
+      <div class="rank-row">
+        <div class="rank-block" id="rank-current">
+          <div class="rank-eyebrow">Current</div>
+          <div class="rank-body">
+            <img class="rank-icon" id="rank-icon" alt="" width="44" height="44"/>
             <div>
               <div class="rank-tier" id="rank-tier">Unranked</div>
               <div class="rank-rr" id="rank-rr">&mdash;</div>
             </div>
           </div>
-          <div class="rank-item rank-item-peak">
-            <img class="rank-icon" id="peak-icon" alt="" width="48" height="48"/>
+        </div>
+        <div class="rank-block" id="rank-peak">
+          <div class="rank-eyebrow">Peak</div>
+          <div class="rank-body">
+            <img class="rank-icon" id="peak-icon" alt="" width="44" height="44"/>
             <div>
               <div class="rank-tier" id="peak-tier">&mdash;</div>
-              <div class="rank-rr" id="peak-meta">Peak</div>
+              <div class="rank-rr" id="peak-meta">&mdash;</div>
             </div>
           </div>
         </div>
-        <div class="recent-agent" id="recent-agent" hidden>
-          <img id="recent-agent-img" alt="" width="18" height="18"/>
-          <span>Last:&nbsp;</span><span id="recent-agent-name">&mdash;</span>
-        </div>
+      </div>
+
+      <!-- Stats summary — compact 4-up row -->
+      <div class="stats-row" id="stats-row">
+        <div class="stat-cell"><div class="stat-label">WR</div><div class="stat-value" id="stat-wr">&mdash;</div></div>
+        <div class="stat-cell"><div class="stat-label">KDA</div><div class="stat-value" id="stat-kda">&mdash;</div></div>
+        <div class="stat-cell"><div class="stat-label">ACS</div><div class="stat-value" id="stat-acs">&mdash;</div></div>
+        <div class="stat-cell"><div class="stat-label">HS%</div><div class="stat-value" id="stat-hs">&mdash;</div></div>
       </div>
     </section>
 
-    <!-- Match list — compact -->
+    <!-- Mode filter pills -->
+    <div class="modes" id="modes" role="tablist" hidden>
+      <button class="mode-pill active" data-mode="competitive" role="tab">Comp</button>
+      <button class="mode-pill" data-mode="unrated" role="tab">Unrated</button>
+      <button class="mode-pill" data-mode="deathmatch" role="tab">DM</button>
+      <button class="mode-pill" data-mode="" role="tab">All</button>
+    </div>
+
+    <!-- Match list — collapsible per row -->
     <section class="matches-block" id="matches-block" hidden>
       <div class="matches-head">
         <span class="eyebrow">Recent matches</span>
@@ -100,7 +180,32 @@
       </div>
       <div class="matches-list" id="matches-list"></div>
     </section>
+
   </main>
+
+  <!-- HUD overlay (shown when window is in HUD mode) — completely different
+       layout, just rank + last match. Hidden in normal mode via CSS. -->
+  <div class="hud-shell" id="hud-shell" hidden>
+    <div class="hud-titlebar" id="hud-titlebar">
+      <span class="hud-mark">evzero/<span class="hud-mark-tag">val</span></span>
+      <button class="tb-btn hud-x" id="hud-x" title="Exit HUD mode" aria-label="Exit HUD">
+        <svg viewBox="0 0 16 16" width="10" height="10"><rect x="2" y="2" width="12" height="8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="11" width="5" height="3" rx="0.8" fill="currentColor"/></svg>
+      </button>
+    </div>
+    <div class="hud-body">
+      <img class="hud-rank-icon" id="hud-rank-icon" alt="" width="42" height="42"/>
+      <div class="hud-info">
+        <div class="hud-name" id="hud-name">&mdash;</div>
+        <div class="hud-rank" id="hud-rank">Unranked</div>
+        <div class="hud-rr" id="hud-rr">&mdash; RR</div>
+      </div>
+      <div class="hud-last" id="hud-last">
+        <div class="hud-last-label">Last</div>
+        <div class="hud-last-result" id="hud-last-result">&mdash;</div>
+        <div class="hud-last-kda" id="hud-last-kda">&mdash;</div>
+      </div>
+    </div>
+  </div>
 
   <footer class="footer">
     <span id="version">v—</span>

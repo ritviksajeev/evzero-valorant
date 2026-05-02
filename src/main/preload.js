@@ -23,6 +23,19 @@ contextBridge.exposeInMainWorld('evzero', {
   windowTogglePin: () => ipcRenderer.invoke('evzero:window-toggle-pin'),
   windowGetPin:    () => ipcRenderer.invoke('evzero:window-get-pin'),
 
+  // Overlay-HUD mode (compact 300x150 widget)
+  hudToggle: () => ipcRenderer.invoke('evzero:hud-toggle'),
+  hudGet:    () => ipcRenderer.invoke('evzero:hud-get'),
+  // Listener for hud-mode changes triggered from outside the renderer (tray menu).
+  onHudChanged: (cb) => {
+    const handler = (_e, on) => cb(!!on);
+    ipcRenderer.on('evzero:hud-changed', handler);
+    return () => ipcRenderer.removeListener('evzero:hud-changed', handler);
+  },
+
+  // Native OS notification — used when live mode detects a new match.
+  notify: (opts) => ipcRenderer.invoke('evzero:notify', opts),
+
   // Auto-launch toggle
   getAutoLaunch: () => ipcRenderer.invoke('evzero:get-auto-launch'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('evzero:set-auto-launch', enabled),
