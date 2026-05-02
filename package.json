@@ -1,0 +1,53 @@
+{
+  "name": "evzero-desktop",
+  "productName": "evzero",
+  "version": "0.1.0",
+  "description": "evzero desktop tracker — Valorant stats, system tray, global hotkey. Read-only, no game integration, anti-cheat safe.",
+  "main": "src/main/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "package": "electron-builder --dir",
+    "make": "electron-builder",
+    "make:win": "electron-builder --win nsis"
+  },
+  "keywords": ["valorant", "tracker", "evzero", "desktop"],
+  "author": {
+    "name": "evzero",
+    "email": "evzero@icloud.com"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "org.evzero.desktop",
+    "productName": "evzero",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "evzero"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "ritviksajeev",
+      "repo": "evzero-desktop"
+    }
+  }
+}

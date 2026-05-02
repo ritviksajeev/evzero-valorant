@@ -1,0 +1,19 @@
+node_modules/
+dist/
+out/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.env
+.env.local
+
+# electron-builder cache
+.cache/
+electron-builder.yml
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.snap

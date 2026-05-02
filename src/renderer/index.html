@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://media.valorant-api.com data:; connect-src 'self' https://ev-production.up.railway.app https://valorant-api.com; script-src 'self'; frame-src https://evzero.org;"/>
+  <title>evzero</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Unbounded:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <div class="bg-layer" aria-hidden="true">
+    <div class="bg-base"></div>
+    <div class="bg-grid"></div>
+    <div class="bg-vignette"></div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">evzero</span>
+      <span class="brand-tag">desktop</span>
+    </div>
+    <div class="topbar-meta">
+      <span class="topbar-version" id="version">v—</span>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Desktop · v0.1</div>
+      <h1>Valorant<br/><span class="accent">Tracker.</span></h1>
+      <p class="tagline">
+        Your stats, in a window.
+        <span class="tagline-dim">Same data as evzero.org. Tray-resident, hotkey-summoned, anti-cheat safe.</span>
+      </p>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="open-tracker">
+          <span>Open tracker</span>
+          <span class="arrow">&rarr;</span>
+        </button>
+        <button class="btn btn-ghost" id="open-web">
+          <span>Open evzero.org</span>
+        </button>
+      </div>
+
+      <div class="settings">
+        <label class="setting">
+          <input type="checkbox" id="auto-launch"/>
+          <span>Launch at login</span>
+        </label>
+        <div class="setting-hotkey">
+          <span class="setting-label">Summon hotkey</span>
+          <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>V</kbd>
+        </div>
+      </div>
+    </section>
+
+    <section class="info-grid">
+      <div class="info-card">
+        <div class="info-eyebrow">What it does</div>
+        <ul class="info-list">
+          <li>Lookup any Riot ID — same backend as the website</li>
+          <li>Lives in your tray, summon with a global hotkey</li>
+          <li>Saved players + recent searches persist locally</li>
+          <li>Native window — no browser tabs to lose</li>
+        </ul>
+      </div>
+      <div class="info-card">
+        <div class="info-eyebrow">What it never does</div>
+        <ul class="info-list info-list-no">
+          <li>Read game memory or inject anything</li>
+          <li>Draw an overlay over Valorant</li>
+          <li>Simulate keyboard or mouse input</li>
+          <li>Run as Administrator</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>evzero.org · desktop</span>
+    <span id="platform">—</span>
+  </footer>
+
+  <!-- Tracker panel (hidden until "Open tracker" clicked). v0.1 wraps the
+       hosted site in a webview-like iframe; v0.2 will inline the renderer
+       so it works fully offline. -->
+  <div class="tracker-panel" id="tracker-panel" hidden>
+    <button class="tracker-close" id="tracker-close" aria-label="Close tracker">&times;</button>
+    <iframe class="tracker-frame" id="tracker-frame" title="evzero tracker" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
