@@ -1,26 +1,25 @@
 /* ============================================
-   evzero desktop — main process
+   evzero/valorant — main process (overlay edition)
    ============================================
-   Responsibilities:
-     - Single window lifecycle (no game overlay, ever)
-     - System tray icon + menu
-     - Global hotkey to summon/hide window
-     - Optional auto-launch on login
+   Compact frameless always-on-top widget. Lives at a corner of the screen
+   beside a borderless-windowed Valorant. Vanguard-safe by design — passive
+   HTTP client only, no game process interaction whatsoever.
 
    Anti-cheat boundaries we do NOT cross:
      - No reading game memory
-     - No DLL injection
+     - No DLL injection or hooking
+     - No drawing inside the game's render context
      - No input simulation
-     - No drawing over the Valorant window
      - No requirement to run as Administrator
-   We are a passive HTTP client + tray-resident window. That's it.
+     - No Riot client local API or lockfile
+   The window is just a regular Electron window with `alwaysOnTop`. Same
+   pattern Discord, Spotify, OBS, etc. use — Vanguard does not flag this.
    ============================================ */
 
-const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, shell, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-// Single-instance lock — second launch focuses the existing window instead of spawning.
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -30,15 +29,31 @@ if (!gotLock) {
 const isDev = process.argv.includes('--dev');
 const HOTKEY = 'CommandOrControl+Shift+V';
 
+// Compact widget dimensions — chosen to sit comfortably beside a 1920x1080
+// game without obscuring central content. Resizable so users can shrink
+// further if they want a minimal HUD-style stack.
+const WIN_W = 420;
+const WIN_H = 680;
+const WIN_MIN_W = 340;
+const WIN_MIN_H = 480;
+
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
+let isPinned = true; // alwaysOnTop default — toggle via tray or in-app
 
 function iconPath(name) {
-  // Falls back gracefully if the asset is missing (e.g. before icons are
-  // generated). Electron will use a default icon in that case.
   const p = path.join(__dirname, '..', '..', 'assets', name);
   return fs.existsSync(p) ? p : null;
+}
+
+function defaultPosition() {
+  // Snap to top-right of the primary work area on first launch.
+  const { workArea } = screen.getPrimaryDisplay();
+  return {
+    x: workArea.x + workArea.width - WIN_W - 24,
+    y: workArea.y + 80,
+  };
 }
 
 function createMainWindow() {
@@ -47,16 +62,26 @@ function createMainWindow() {
     mainWindow.focus();
     return;
   }
+  const pos = defaultPosition();
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 820,
-    minWidth: 760,
-    minHeight: 560,
-    backgroundColor: '#050507', // matches website --bg-0
-    title: 'evzero',
+    width: WIN_W,
+    height: WIN_H,
+    minWidth: WIN_MIN_W,
+    minHeight: WIN_MIN_H,
+    x: pos.x,
+    y: pos.y,
+    backgroundColor: '#050507',
+    title: 'evzero/valorant',
     icon: iconPath('icon.png'),
-    autoHideMenuBar: true,
+    frame: false,            // no native chrome — we draw our own titlebar
+    titleBarStyle: 'hidden',
+    transparent: false,      // opaque background keeps Windows resize smooth
+    alwaysOnTop: isPinned,
+    skipTaskbar: false,
     show: false,
+    autoHideMenuBar: true,
+    resizable: true,
+    fullscreenable: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -65,17 +90,18 @@ function createMainWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  // Use a sane window level — sits above normal apps but below screen savers
+  // so we never float over critical OS UI.
+  if (isPinned) mainWindow.setAlwaysOnTop(true, 'floating');
 
+  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
-  // External links open in the default browser, never inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
 
-  // Closing the window hides it to tray instead of quitting (until tray Quit).
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
@@ -99,9 +125,22 @@ function toggleWindow() {
   }
 }
 
+function setPinned(on) {
+  isPinned = !!on;
+  if (mainWindow) mainWindow.setAlwaysOnTop(isPinned, 'floating');
+  tray?.setContextMenu(buildTrayMenu());
+  return isPinned;
+}
+
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
-    { label: 'Show evzero', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+    { label: 'Show widget', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+    {
+      label: 'Always on top',
+      type: 'checkbox',
+      checked: isPinned,
+      click: (item) => setPinned(item.checked),
+    },
     { type: 'separator' },
     {
       label: 'Launch at login',
@@ -113,28 +152,24 @@ function buildTrayMenu() {
     { label: `Hotkey: ${HOTKEY.replace('CommandOrControl', 'Ctrl')}`, enabled: false },
     { label: 'Open evzero.org', click: () => shell.openExternal('https://evzero.org/valorant/') },
     { type: 'separator' },
-    { label: 'Quit evzero', click: () => { isQuitting = true; app.quit(); } },
+    { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
   ]);
 }
 
 function createTray() {
-  // Try a couple of icon sizes — Electron picks the closest match for the
-  // tray DPI. If neither exists we let Electron use a placeholder.
   const icon = nativeImage.createFromPath(iconPath('tray.png') || '');
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
-  tray.setToolTip('evzero — Valorant tracker');
+  tray.setToolTip('evzero/valorant');
   tray.setContextMenu(buildTrayMenu());
   tray.on('click', toggleWindow);
 }
 
 // ---- IPC: tiny safe surface for the renderer ----------------------------
-// The renderer can ASK for these things via window.evzero.*; the main process
-// never trusts arbitrary data back. No filesystem writes from the renderer.
 
 ipcMain.handle('evzero:get-version', () => app.getVersion());
 ipcMain.handle('evzero:get-platform', () => process.platform);
+
 ipcMain.handle('evzero:open-external', (_e, url) => {
-  // Whitelist — only allow https urls to known hosts.
   try {
     const u = new URL(url);
     if (u.protocol !== 'https:') return false;
@@ -146,7 +181,12 @@ ipcMain.handle('evzero:open-external', (_e, url) => {
   }
 });
 
-// Auto-launch toggle from renderer settings UI (later).
+// Custom-titlebar window controls.
+ipcMain.handle('evzero:window-minimize',   () => mainWindow?.minimize());
+ipcMain.handle('evzero:window-close',      () => mainWindow?.hide());
+ipcMain.handle('evzero:window-toggle-pin', () => setPinned(!isPinned));
+ipcMain.handle('evzero:window-get-pin',    () => isPinned);
+
 ipcMain.handle('evzero:set-auto-launch', (_e, enabled) => {
   app.setLoginItemSettings({ openAtLogin: !!enabled });
   tray?.setContextMenu(buildTrayMenu());
@@ -157,7 +197,6 @@ ipcMain.handle('evzero:get-auto-launch', () => app.getLoginItemSettings().openAt
 // ---- App lifecycle ------------------------------------------------------
 
 app.on('second-instance', () => {
-  // User tried to launch twice — focus the existing window.
   if (mainWindow) {
     if (!mainWindow.isVisible()) mainWindow.show();
     mainWindow.focus();
@@ -171,8 +210,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', (e) => {
-  // Stay alive in the tray on Windows/Linux; macOS apps usually stay alive too.
-  // Only quit when isQuitting is set via tray.
   if (!isQuitting) e.preventDefault();
 });
 

@@ -1,18 +1,22 @@
-# evzero desktop
+# evzero/valorant
 
-Desktop companion for [evzero.org/valorant](https://evzero.org/valorant/) — Valorant tracker in a system-tray-resident window with a global hotkey.
+Compact frameless **overlay widget** for Valorant stats. Sits always-on-top in a corner of your screen, built to live alongside a borderless-windowed game session. Shares the [evzero.org/valorant](https://evzero.org/valorant/) backend.
 
 ## Status
 
-**v0.1** — scaffold. Window + tray + hotkey + auto-launch. Tracker UI loads from the live website inside a sandboxed iframe.
+**v0.2** — frameless overlay. 420×680 widget with custom titlebar, drag region, pinning, tray, global hotkey. Native search + match list talking directly to the proxy backend (no iframe).
 
 ## What it does
 
-- Lookup any Riot ID using the same Henrik proxy as the website
+- Compact always-on-top widget, frameless and clean
+- Search any Riot ID — name + tag + region
+- Profile card with current rank, peak rank, last-played agent
+- 10 most recent matches, one-line each, win/loss colour strip
 - Lives in your system tray, summon with `Ctrl+Shift+V`
-- Saved players + recent searches persist locally
-- Native window — no browser tabs to lose
-- Optional auto-launch on login
+- Auto-restores the last player you looked up when reopened
+- Pin/unpin always-on-top from the titlebar
+- Optional launch at login
+- Drag from anywhere in the titlebar; click outside hides to tray
 
 ## What it never does
 
@@ -20,25 +24,25 @@ This is the explicit non-goal list. None of these will ever be added.
 
 - ❌ Read game memory
 - ❌ DLL injection or any kind of hooking
-- ❌ Draw an overlay over the Valorant window
+- ❌ Draw inside the Valorant render context
 - ❌ Simulate keyboard or mouse input
 - ❌ Require Administrator privileges
 - ❌ Use the Riot client local API or lockfile (gray-area, opt-out forever)
 
-The app is a passive HTTP client + tray-resident window. Nothing it does could plausibly conflict with Vanguard.
+The widget is a regular Electron window with `alwaysOnTop`. Same pattern Discord/Spotify/OBS use — Vanguard does not flag this.
 
 ## Running locally
 
 ```bash
 npm install
-npm run dev      # opens with DevTools
-npm start        # opens normally
+npm run dev   # opens with DevTools detached
+npm start     # opens normally
 ```
 
 ## Packaging
 
 ```bash
-npm run make:win # builds an NSIS installer in ./dist
+npm run make:win   # builds an NSIS installer in ./dist
 ```
 
 ## Architecture
@@ -46,14 +50,14 @@ npm run make:win # builds an NSIS installer in ./dist
 ```
 src/
 ├─ main/
-│  ├─ main.js     # Electron main process — window, tray, hotkey, IPC
-│  └─ preload.js  # contextBridge — exposes `window.evzero.*` to renderer
+│  ├─ main.js     # window (frameless, alwaysOnTop), tray, hotkey, window-control IPC
+│  └─ preload.js  # contextBridge → window.evzero.* (8 calls, validated host whitelist)
 └─ renderer/
-   ├─ index.html  # shell UI
-   ├─ styles.css  # reuses website palette and type system
-   └─ app.js      # tracker panel + settings
+   ├─ index.html  # custom titlebar + compact widget UI
+   ├─ styles.css  # overlay-tuned: small type, glass titlebar, compact cards
+   └─ app.js      # search, profile render, match list — talks to the proxy directly
 ```
 
-## License
+## Licence
 
 MIT

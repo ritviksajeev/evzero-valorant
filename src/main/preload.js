@@ -1,5 +1,5 @@
 /* ============================================
-   evzero desktop — preload bridge
+   evzero/valorant — preload bridge
    ============================================
    Exposes a tiny, validated API to the renderer via contextBridge. The
    renderer has NO direct access to Node, fs, child_process, ipc, or any
@@ -16,6 +16,12 @@ contextBridge.exposeInMainWorld('evzero', {
 
   // External link opener (whitelisted host check happens main-side)
   openExternal: (url) => ipcRenderer.invoke('evzero:open-external', url),
+
+  // Window controls — drive the custom titlebar
+  windowMinimize:  () => ipcRenderer.invoke('evzero:window-minimize'),
+  windowClose:     () => ipcRenderer.invoke('evzero:window-close'),
+  windowTogglePin: () => ipcRenderer.invoke('evzero:window-toggle-pin'),
+  windowGetPin:    () => ipcRenderer.invoke('evzero:window-get-pin'),
 
   // Auto-launch toggle
   getAutoLaunch: () => ipcRenderer.invoke('evzero:get-auto-launch'),

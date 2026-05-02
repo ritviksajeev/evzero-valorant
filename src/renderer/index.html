@@ -2,94 +2,113 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://media.valorant-api.com data:; connect-src 'self' https://ev-production.up.railway.app https://valorant-api.com; script-src 'self'; frame-src https://evzero.org;"/>
-  <title>evzero</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://media.valorant-api.com data:; connect-src 'self' https://ev-production.up.railway.app https://valorant-api.com; script-src 'self';"/>
+  <title>evzero/valorant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Unbounded:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Unbounded:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="styles.css"/>
 </head>
 <body>
-  <div class="bg-layer" aria-hidden="true">
-    <div class="bg-base"></div>
-    <div class="bg-grid"></div>
-    <div class="bg-vignette"></div>
-  </div>
+  <div class="bg" aria-hidden="true"></div>
 
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark">evzero</span>
-      <span class="brand-tag">desktop</span>
+  <!-- Custom titlebar — the entire bar is draggable except buttons. -->
+  <header class="titlebar" id="titlebar">
+    <div class="titlebar-brand">
+      <span class="titlebar-mark">evzero</span>
+      <span class="titlebar-tag">/ valorant</span>
     </div>
-    <div class="topbar-meta">
-      <span class="topbar-version" id="version">v—</span>
+    <div class="titlebar-controls">
+      <button class="tb-btn tb-pin" id="tb-pin" title="Toggle always-on-top" aria-label="Pin">
+        <svg viewBox="0 0 16 16" width="11" height="11"><path fill="currentColor" d="M9.5 1.5l5 5-2 .5-1 1 1 4-4-4-4 4 .5-3.5L1 6l4-1 1-1L6 1.5l3.5 0z"/></svg>
+      </button>
+      <button class="tb-btn tb-min" id="tb-min" title="Minimize" aria-label="Minimize">
+        <svg viewBox="0 0 16 16" width="11" height="11"><rect x="3" y="7.25" width="10" height="1.5" fill="currentColor"/></svg>
+      </button>
+      <button class="tb-btn tb-close" id="tb-close" title="Hide to tray" aria-label="Close">
+        <svg viewBox="0 0 16 16" width="11" height="11"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
     </div>
   </header>
 
-  <main class="shell">
-    <section class="hero">
-      <div class="eyebrow">Desktop · v0.1</div>
-      <h1>Valorant<br/><span class="accent">Tracker.</span></h1>
-      <p class="tagline">
-        Your stats, in a window.
-        <span class="tagline-dim">Same data as evzero.org. Tray-resident, hotkey-summoned, anti-cheat safe.</span>
-      </p>
-
-      <div class="actions">
-        <button class="btn btn-primary" id="open-tracker">
-          <span>Open tracker</span>
-          <span class="arrow">&rarr;</span>
-        </button>
-        <button class="btn btn-ghost" id="open-web">
-          <span>Open evzero.org</span>
-        </button>
+  <main class="content">
+    <!-- Search row -->
+    <form class="search" id="search" autocomplete="off">
+      <div class="search-row">
+        <input id="name" class="search-input" type="text" placeholder="Player" maxlength="16" spellcheck="false" required/>
+        <span class="search-hash">#</span>
+        <input id="tag" class="search-input search-tag" type="text" placeholder="TAG" maxlength="5" spellcheck="false" required/>
+        <select id="region" class="search-region">
+          <option value="ap">AP</option>
+          <option value="na">NA</option>
+          <option value="eu">EU</option>
+          <option value="kr">KR</option>
+          <option value="latam">LATAM</option>
+          <option value="br">BR</option>
+        </select>
       </div>
+      <button id="search-btn" class="search-btn" type="submit">
+        <span>Search</span>
+        <span class="arrow">&rarr;</span>
+      </button>
+    </form>
 
-      <div class="settings">
-        <label class="setting">
-          <input type="checkbox" id="auto-launch"/>
-          <span>Launch at login</span>
-        </label>
-        <div class="setting-hotkey">
-          <span class="setting-label">Summon hotkey</span>
-          <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>V</kbd>
+    <!-- Status pill -->
+    <div class="status idle" id="status">
+      <span class="status-dot"></span>
+      <span class="status-text">Idle</span>
+    </div>
+
+    <!-- Profile card -->
+    <section class="profile" id="profile" hidden>
+      <div class="profile-bg" id="profile-bg"></div>
+      <div class="profile-overlay"></div>
+      <div class="profile-inner">
+        <div class="profile-name" id="profile-name">&mdash;</div>
+        <div class="profile-meta">
+          <span class="meta-chip" id="meta-level">Level &mdash;</span>
+          <span class="meta-chip" id="meta-region">&mdash;</span>
+        </div>
+        <div class="rank-row">
+          <div class="rank-item">
+            <img class="rank-icon" id="rank-icon" alt="" width="48" height="48"/>
+            <div>
+              <div class="rank-tier" id="rank-tier">Unranked</div>
+              <div class="rank-rr" id="rank-rr">&mdash;</div>
+            </div>
+          </div>
+          <div class="rank-item rank-item-peak">
+            <img class="rank-icon" id="peak-icon" alt="" width="48" height="48"/>
+            <div>
+              <div class="rank-tier" id="peak-tier">&mdash;</div>
+              <div class="rank-rr" id="peak-meta">Peak</div>
+            </div>
+          </div>
+        </div>
+        <div class="recent-agent" id="recent-agent" hidden>
+          <img id="recent-agent-img" alt="" width="18" height="18"/>
+          <span>Last:&nbsp;</span><span id="recent-agent-name">&mdash;</span>
         </div>
       </div>
     </section>
 
-    <section class="info-grid">
-      <div class="info-card">
-        <div class="info-eyebrow">What it does</div>
-        <ul class="info-list">
-          <li>Lookup any Riot ID — same backend as the website</li>
-          <li>Lives in your tray, summon with a global hotkey</li>
-          <li>Saved players + recent searches persist locally</li>
-          <li>Native window — no browser tabs to lose</li>
-        </ul>
+    <!-- Match list — compact -->
+    <section class="matches-block" id="matches-block" hidden>
+      <div class="matches-head">
+        <span class="eyebrow">Recent matches</span>
+        <span class="matches-count" id="matches-count">&mdash;</span>
       </div>
-      <div class="info-card">
-        <div class="info-eyebrow">What it never does</div>
-        <ul class="info-list info-list-no">
-          <li>Read game memory or inject anything</li>
-          <li>Draw an overlay over Valorant</li>
-          <li>Simulate keyboard or mouse input</li>
-          <li>Run as Administrator</li>
-        </ul>
-      </div>
+      <div class="matches-list" id="matches-list"></div>
     </section>
   </main>
 
   <footer class="footer">
-    <span>evzero.org · desktop</span>
-    <span id="platform">—</span>
+    <span id="version">v—</span>
+    <button id="open-web" class="footer-link">evzero.org &rarr;</button>
   </footer>
 
-  <!-- Tracker panel (hidden until "Open tracker" clicked). v0.1 wraps the
-       hosted site in a webview-like iframe; v0.2 will inline the renderer
-       so it works fully offline. -->
-  <div class="tracker-panel" id="tracker-panel" hidden>
-    <button class="tracker-close" id="tracker-close" aria-label="Close tracker">&times;</button>
-    <iframe class="tracker-frame" id="tracker-frame" title="evzero tracker" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+    <span id="toast-text"></span>
   </div>
 
   <script src="app.js"></script>

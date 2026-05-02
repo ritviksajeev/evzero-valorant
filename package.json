@@ -1,8 +1,8 @@
 {
-  "name": "evzero-desktop",
-  "productName": "evzero",
-  "version": "0.1.0",
-  "description": "evzero desktop tracker — Valorant stats, system tray, global hotkey. Read-only, no game integration, anti-cheat safe.",
+  "name": "evzero-valorant",
+  "productName": "evzero/valorant",
+  "version": "0.2.0",
+  "description": "Compact Valorant overlay — frameless always-on-top widget, system tray, global hotkey. Read-only, anti-cheat safe.",
   "main": "src/main/main.js",
   "type": "commonjs",
   "scripts": {
@@ -23,7 +23,7 @@
     "electron-builder": "^25.0.0"
   },
   "build": {
-    "appId": "org.evzero.desktop",
+    "appId": "org.evzero.valorant",
     "productName": "evzero",
     "directories": {
       "output": "dist"
@@ -47,7 +47,7 @@
     "publish": {
       "provider": "github",
       "owner": "ritviksajeev",
-      "repo": "evzero-desktop"
+      "repo": "evzero-valorant"
     }
   }
 }
