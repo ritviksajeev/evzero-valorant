@@ -200,7 +200,11 @@ function buildTrayMenu() {
 }
 
 function createTray() {
-  const icon = nativeImage.createFromPath(iconPath('tray.png') || '');
+  // Prefer tray.png (32) and let nativeImage pick the @2x companion for HiDPI
+  // automatically. addRepresentation isn't needed when both files exist with
+  // the standard @2x suffix in the same directory.
+  const trayPath = iconPath('tray.png') || iconPath('icon.png') || '';
+  const icon = trayPath ? nativeImage.createFromPath(trayPath) : nativeImage.createEmpty();
   tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon);
   tray.setToolTip('evzero/valorant');
   tray.setContextMenu(buildTrayMenu());

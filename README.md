@@ -83,6 +83,25 @@ npm run dev   # opens with DevTools detached
 npm start     # opens normally
 ```
 
+## App icons
+
+Drop a square PNG (512×512 or larger ideally) at `assets/icon-source.png`, then:
+
+```bash
+npm run icons
+```
+
+This emits everything the app + installer want:
+
+| File | Size | Used by |
+|---|---|---|
+| `assets/icon.png` | 256×256 | BrowserWindow chrome, Linux fallback |
+| `assets/tray.png` | 32×32 | System tray |
+| `assets/tray@2x.png` | 64×64 | System tray (HiDPI) |
+| `assets/icon.ico` | 16/24/32/48/64/128/256 multi | Windows installer + taskbar |
+
+Restart the app and the new icons will be picked up — no further wiring needed.
+
 ## Packaging
 
 ```bash
