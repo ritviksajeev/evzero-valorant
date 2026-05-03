@@ -4,7 +4,7 @@ Compact frameless **overlay widget** for Valorant stats. Sits always-on-top alon
 
 ## Status
 
-**v0.4** — view tabs, crosshair builder + overlay, "Your Riot ID" auto-load, bug fixes.
+**v0.5** — click-through mode, custom image/GIF crosshair, fixed always-on-top vs game, stronger bug fixes.
 
 ## Features
 
@@ -26,6 +26,10 @@ Tracker mode (420×680, frameless, always-on-top)
 - Settings UI (color, outline, dot, inner lines, outer lines) with live SVG preview
 - Generates a Valorant share-code string ready to paste into in-game settings
 - Six built-in presets (Default / Dot only / Tight plus / Open cross / tarik / TenZ)
+- **Custom image/GIF crosshair** — drop a PNG/GIF/WebP/SVG into the Image tab,
+  it replaces the SVG shapes in both the preview and the overlay. Animated
+  GIFs animate. Image mode is overlay-only (Valorant doesn't support custom
+  images natively, so it doesn't generate a share code in this mode).
 - **Optional transparent overlay window** — toggleable click-through full-screen
   window that draws your crosshair at screen centre. Useful when you want to
   preview without alt-tabbing into the game. Same Electron primitive Discord
@@ -46,7 +50,14 @@ Tracker mode (420×680, frameless, always-on-top)
 - One-click back to widget mode
 
 **Common**
-- Custom titlebar with drag region, minimize, hide-to-tray, pin, HUD toggle, settings
+- Custom titlebar with drag region, minimize, hide-to-tray, pin, HUD toggle, click-through, settings
+- **Click-through mode** — pass mouse clicks through to whatever's underneath
+  the widget. Toggle via the titlebar icon, the global `Ctrl+Shift+L` hotkey,
+  or the tray menu. A bottom banner reminds you when it's on, since once
+  enabled the renderer can't receive its own clicks to flip back.
+- **Always-on-top is now `screen-saver` level + re-applied on focus events**,
+  so the widget stops slipping behind borderless-windowed Valorant during
+  fullscreen transitions.
 - Lives in the system tray, summon with `Ctrl+Shift+V`
 - Auto-restores last player on launch
 - Single-instance — re-launch focuses the existing window
@@ -98,6 +109,7 @@ src/
 | Action | Default |
 |---|---|
 | Show / hide widget | `Ctrl+Shift+V` |
+| Click-through toggle | `Ctrl+Shift+L` |
 | Expand match row (when focused) | `Enter` / `Space` |
 
 ## Licence

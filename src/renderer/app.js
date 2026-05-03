@@ -77,9 +77,11 @@
 
   const tbSettings = $('tb-settings');
   const tbHud = $('tb-hud');
+  const tbClickThrough = $('tb-clickthrough');
   const tbPin = $('tb-pin');
   const tbMin = $('tb-min');
   const tbClose = $('tb-close');
+  const ctBanner = $('click-through-banner');
   const settingsPop = $('settings-pop');
   const setPin = $('set-pin');
   const setLaunch = $('set-launch');
@@ -164,6 +166,25 @@
   tbHud.addEventListener('click', async () => {
     await evz.hudToggle?.();
   });
+  tbClickThrough.addEventListener('click', async () => {
+    await evz.clickThroughToggle?.();
+  });
+  // The main process emits this whenever click-through changes — keep the
+  // titlebar button + bottom banner in sync regardless of which control
+  // (titlebar / hotkey / tray) the user used.
+  if (evz.onClickThroughChanged) {
+    evz.onClickThroughChanged((on) => {
+      tbClickThrough.classList.toggle('active', on);
+      ctBanner.hidden = !on;
+      if (on) toast('Click-through ON · Ctrl+Shift+L to disable');
+    });
+  }
+  if (evz.clickThroughGet) {
+    evz.clickThroughGet().then((on) => {
+      tbClickThrough.classList.toggle('active', !!on);
+      ctBanner.hidden = !on;
+    });
+  }
   hudX.addEventListener('click', async () => {
     await evz.hudToggle?.();
   });
@@ -851,6 +872,16 @@
     dot: false, dotThick: 2, dotOp: 1,
     innerShow: true, innerThick: 2, innerLen: 6, innerOff: 3, innerOp: 1,
     outerShow: false, outerThick: 2, outerLen: 2, outerOff: 10, outerOp: 0.35,
+    // Image-as-crosshair mode. When `imageUse` is on, the image (stored as a
+    // base64 data URL so it survives reload + travels via IPC) replaces the
+    // SVG shapes in both the in-app preview and the screen overlay. Doesn't
+    // affect the Valorant share code — that stays driven by the SVG settings.
+    imageUse: false,
+    imageData: '',     // data:image/...;base64,...
+    imageName: '',
+    imageBytes: 0,
+    imageSize: 32,     // rendered px
+    imageOp: 1,
   };
   let xh = (() => {
     try {
@@ -908,6 +939,100 @@
   bindRange('xh-outer-offset', 'outerOff');
   bindRange('xh-outer-op',     'outerOp', (v) => Number(v).toFixed(2));
 
+  bindCheck('xh-image-use', 'imageUse');
+  bindRange('xh-image-size', 'imageSize');
+  bindRange('xh-image-op',   'imageOp', (v) => Number(v).toFixed(2));
+
+  // ---- Image upload + persistence ------------------------------------
+  // Max ~1 MB so it round-trips via localStorage (5 MB cap) and IPC without
+  // pain. We refuse anything bigger and toast an error.
+  const IMAGE_MAX_BYTES = 1024 * 1024;
+  const xhImageDrop = document.getElementById('xh-image-drop');
+  const xhImageFile = document.getElementById('xh-image-file');
+  const xhImageDropEmpty = document.getElementById('xh-image-drop-empty');
+  const xhImageDropLoaded = document.getElementById('xh-image-drop-loaded');
+  const xhImageThumb = document.getElementById('xh-image-thumb');
+  const xhImageName = document.getElementById('xh-image-name');
+  const xhImageSizeInfo = document.getElementById('xh-image-size-info');
+  const xhImageRemove = document.getElementById('xh-image-remove');
+
+  function fmtBytes(n) {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+    return `${(n / 1024 / 1024).toFixed(2)} MB`;
+  }
+  function refreshImageDropUi() {
+    const has = !!xh.imageData;
+    xhImageDropEmpty.hidden = has;
+    xhImageDropLoaded.hidden = !has;
+    if (has) {
+      xhImageThumb.src = xh.imageData;
+      xhImageName.textContent = xh.imageName || 'image';
+      xhImageSizeInfo.textContent = fmtBytes(xh.imageBytes || 0);
+    }
+  }
+  function loadImageFile(file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { toast('Not an image'); return; }
+    if (file.size > IMAGE_MAX_BYTES) {
+      toast(`Too large (${fmtBytes(file.size)}) · 1 MB max`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      xh.imageData = String(reader.result || '');
+      xh.imageName = file.name;
+      xh.imageBytes = file.size;
+      // Auto-enable image mode when a file is loaded so it's instantly visible.
+      xh.imageUse = true;
+      document.getElementById('xh-image-use').checked = true;
+      refreshImageDropUi();
+      onXhChange();
+      toast('Image loaded');
+    };
+    reader.onerror = () => toast('Failed to read file');
+    reader.readAsDataURL(file);
+  }
+  // Click anywhere on the drop zone (when empty) opens the picker.
+  xhImageDrop.addEventListener('click', (e) => {
+    if (xh.imageData) return;
+    xhImageFile.click();
+  });
+  xhImageFile.addEventListener('change', () => {
+    const f = xhImageFile.files && xhImageFile.files[0];
+    if (f) loadImageFile(f);
+    xhImageFile.value = ''; // allow re-selecting the same file later
+  });
+  // Drag-and-drop straight into the zone.
+  ['dragenter', 'dragover'].forEach((evt) =>
+    xhImageDrop.addEventListener(evt, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      xhImageDrop.classList.add('drag-over');
+    })
+  );
+  ['dragleave', 'dragend', 'drop'].forEach((evt) =>
+    xhImageDrop.addEventListener(evt, (e) => {
+      e.preventDefault(); e.stopPropagation();
+      xhImageDrop.classList.remove('drag-over');
+    })
+  );
+  xhImageDrop.addEventListener('drop', (e) => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadImageFile(f);
+  });
+  xhImageRemove.addEventListener('click', (e) => {
+    e.stopPropagation();
+    xh.imageData = '';
+    xh.imageName = '';
+    xh.imageBytes = 0;
+    xh.imageUse = false;
+    document.getElementById('xh-image-use').checked = false;
+    refreshImageDropUi();
+    onXhChange();
+    toast('Image removed');
+  });
+  refreshImageDropUi();
+
   // Crosshair category sub-tabs
   const xhCatTabs = document.getElementById('xh-cat-tabs');
   xhCatTabs.addEventListener('click', (e) => {
@@ -961,13 +1086,29 @@
     document.getElementById('xh-outer-offset-val').textContent = xh.outerOff;
     document.getElementById('xh-outer-op').value = xh.outerOp;
     document.getElementById('xh-outer-op-val').textContent = xh.outerOp.toFixed(2);
+    document.getElementById('xh-image-use').checked = !!xh.imageUse;
+    document.getElementById('xh-image-size').value = xh.imageSize;
+    document.getElementById('xh-image-size-val').textContent = String(xh.imageSize);
+    document.getElementById('xh-image-op').value = xh.imageOp;
+    document.getElementById('xh-image-op-val').textContent = xh.imageOp.toFixed(2);
+    refreshImageDropUi();
   }
 
   // Render the crosshair as an SVG. Coordinate space is centered at 0,0 with
   // ±100 viewBox; pixel sizes here scale relative to the preview area.
+  // Image mode short-circuits the SVG-shape pass and renders an <image>.
   function renderCrosshair() {
     const svg = document.getElementById('xh-preview-svg');
     if (!svg) return;
+
+    if (xh.imageUse && xh.imageData) {
+      // SVG <image> centered at 0,0 with the user-chosen size + opacity.
+      const sz = xh.imageSize;
+      const half = sz / 2;
+      svg.innerHTML = `<image href="${xh.imageData}" x="${-half}" y="${-half}" width="${sz}" height="${sz}" opacity="${xh.imageOp}" preserveAspectRatio="xMidYMid meet"/>`;
+      return;
+    }
+
     const out = [];
     const c = xh.color;
     const ot = xh.outlineThick;
@@ -1049,10 +1190,29 @@
   }
 
   function onXhChange() {
-    localStorage.setItem(STORAGE_XH, JSON.stringify(xh));
+    try {
+      localStorage.setItem(STORAGE_XH, JSON.stringify(xh));
+    } catch (e) {
+      // Image data may push us over the localStorage 5MB cap on rare large
+      // GIFs. Persist without it as a fallback so other settings still save.
+      console.warn('[xh] storage full, persisting without image', e);
+      const slim = { ...xh, imageData: '', imageUse: false };
+      try { localStorage.setItem(STORAGE_XH, JSON.stringify(slim)); } catch {}
+    }
     renderCrosshair();
-    document.getElementById('xh-code').value = generateCode();
-    // If the overlay is currently shown, push the new config to it.
+    // The Valorant share code only describes vanilla SVG settings — image
+    // mode is desktop-overlay-only. Show a friendly note in the field so the
+    // user knows the share code mirrors the SVG, not the image.
+    const codeField = document.getElementById('xh-code');
+    if (xh.imageUse && xh.imageData) {
+      codeField.value = '(image mode — overlay only, no in-game share code)';
+    } else {
+      codeField.value = generateCode();
+    }
+    // Push the latest config to the overlay window if it's open. We strip
+    // the imageData if it's huge to avoid blowing through the IPC channel
+    // on every slider tick — the overlay reads it from localStorage on
+    // startup and we only push deltas after the first send.
     evz.crosshairOverlayUpdate?.(xh);
   }
 

@@ -33,6 +33,18 @@ contextBridge.exposeInMainWorld('evzero', {
     return () => ipcRenderer.removeListener('evzero:hud-changed', handler);
   },
 
+  // Click-through mode — passes mouse events through to whatever's underneath.
+  // The toggle is also wired to a global hotkey (Ctrl+Shift+L) and a tray
+  // menu item, since once the window is click-through the renderer can't
+  // receive its own clicks to flip it back off.
+  clickThroughToggle: () => ipcRenderer.invoke('evzero:click-through-toggle'),
+  clickThroughGet:    () => ipcRenderer.invoke('evzero:click-through-get'),
+  onClickThroughChanged: (cb) => {
+    const handler = (_e, on) => cb(!!on);
+    ipcRenderer.on('evzero:click-through-changed', handler);
+    return () => ipcRenderer.removeListener('evzero:click-through-changed', handler);
+  },
+
   // Native OS notification — used when live mode detects a new match.
   notify: (opts) => ipcRenderer.invoke('evzero:notify', opts),
 

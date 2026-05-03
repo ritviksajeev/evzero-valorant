@@ -12,6 +12,14 @@
 <body>
   <div class="bg" aria-hidden="true"></div>
 
+  <!-- Banner shown when click-through mode is on. Reminds the user that the
+       window is currently passing all clicks through to whatever's behind it
+       and points to the global hotkey to disable. -->
+  <div class="click-through-banner" id="click-through-banner" hidden>
+    <span class="click-through-banner-dot"></span>
+    <span>Click-through ON — press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> to disable</span>
+  </div>
+
   <!-- Custom titlebar — entire bar is draggable except buttons. -->
   <header class="titlebar" id="titlebar">
     <div class="titlebar-brand">
@@ -24,6 +32,9 @@
       </button>
       <button class="tb-btn tb-hud" id="tb-hud" title="Toggle overlay HUD mode" aria-label="HUD mode">
         <svg viewBox="0 0 16 16" width="12" height="12"><rect x="2" y="2" width="12" height="8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="9" y="11" width="5" height="3" rx="0.8" fill="currentColor"/></svg>
+      </button>
+      <button class="tb-btn tb-clickthrough" id="tb-clickthrough" title="Click-through (Ctrl+Shift+L) — mouse passes through window" aria-label="Click-through">
+        <svg viewBox="0 0 16 16" width="12" height="12"><path fill="currentColor" d="M5.5 1.5l1.6 9.7 1.85-2.05 2 4.7 1.55-.65-2-4.7L13.1 8.1 5.5 1.5Z"/></svg>
       </button>
       <button class="tb-btn tb-pin" id="tb-pin" title="Toggle always-on-top" aria-label="Pin">
         <svg viewBox="0 0 16 16" width="11" height="11"><path fill="currentColor" d="M9.5 1.5l5 5-2 .5-1 1 1 4-4-4-4 4 .5-3.5L1 6l4-1 1-1L6 1.5l3.5 0z"/></svg>
@@ -56,7 +67,7 @@
       </select>
       <button id="set-primary-save" class="settings-btn" type="button">Save as default</button>
     </div>
-    <div class="settings-hint">Auto-loads when you open the app. Search bar still looks up other players.</div>
+    <div class="settings-hint">Set this once with <em>your</em> Riot ID. Every time you open the app, it'll auto-search this account so you skip retyping. The search bar above still works for looking up anyone else.</div>
     <div class="settings-divider"></div>
     <div class="settings-row">
       <label class="settings-label">
@@ -223,6 +234,7 @@
         <button class="xh-cat-tab active" data-cat="general">General</button>
         <button class="xh-cat-tab" data-cat="inner">Inner</button>
         <button class="xh-cat-tab" data-cat="outer">Outer</button>
+        <button class="xh-cat-tab" data-cat="image">Image</button>
         <button class="xh-cat-tab" data-cat="presets">Presets</button>
       </div>
 
@@ -312,6 +324,43 @@
           <label class="xh-label">Opacity</label>
           <input type="range" id="xh-outer-op" min="0" max="1" step="0.05" value="0.35"/>
           <span class="xh-num" id="xh-outer-op-val">0.35</span>
+        </div>
+      </div>
+
+      <div class="xh-cat" data-cat="image" hidden>
+        <div class="xh-row">
+          <label class="xh-label">Use image as crosshair</label>
+          <input type="checkbox" id="xh-image-use"/>
+        </div>
+        <div class="xh-image-drop" id="xh-image-drop" data-dep="image-use">
+          <input type="file" id="xh-image-file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden/>
+          <div class="xh-image-drop-empty" id="xh-image-drop-empty">
+            <div class="xh-image-drop-title">Drop a PNG / GIF / WebP here</div>
+            <div class="xh-image-drop-hint">or click to choose a file (under 1&nbsp;MB)</div>
+          </div>
+          <div class="xh-image-drop-loaded" id="xh-image-drop-loaded" hidden>
+            <img class="xh-image-thumb" id="xh-image-thumb" alt=""/>
+            <div class="xh-image-meta">
+              <div class="xh-image-name" id="xh-image-name">—</div>
+              <div class="xh-image-size-info" id="xh-image-size-info">—</div>
+              <button type="button" class="xh-image-remove" id="xh-image-remove">Remove</button>
+            </div>
+          </div>
+        </div>
+        <div class="xh-row" data-dep="image-use">
+          <label class="xh-label">Image size</label>
+          <input type="range" id="xh-image-size" min="8" max="120" step="1" value="32"/>
+          <span class="xh-num" id="xh-image-size-val">32</span>
+        </div>
+        <div class="xh-row" data-dep="image-use">
+          <label class="xh-label">Image opacity</label>
+          <input type="range" id="xh-image-op" min="0.1" max="1" step="0.05" value="1"/>
+          <span class="xh-num" id="xh-image-op-val">1.00</span>
+        </div>
+        <div class="xh-image-note">
+          Image mode replaces the dot &amp; lines in the live preview and the
+          screen overlay. Doesn&rsquo;t generate a Valorant share code &mdash;
+          custom images aren&rsquo;t a thing in-game, only in our overlay.
         </div>
       </div>
 

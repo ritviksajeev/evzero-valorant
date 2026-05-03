@@ -131,6 +131,51 @@ input, button, select, textarea { user-select: text; }
 .tb-hud.active { color: var(--purple); }
 .tb-hud.active:hover { background: rgba(167, 139, 250, 0.18); }
 .tb-settings.active { color: var(--purple); }
+.tb-clickthrough.active {
+  background: rgba(245, 185, 106, 0.18);
+  color: var(--gold);
+}
+.tb-clickthrough.active:hover { background: rgba(245, 185, 106, 0.28); }
+
+/* Click-through reminder banner — visible whenever the window is passing
+   clicks through. Sticks to the bottom-centre, just inside the footer. */
+.click-through-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--footer-h) + 10px);
+  transform: translateX(-50%);
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(245, 185, 106, 0.16);
+  border: 1px solid rgba(245, 185, 106, 0.55);
+  border-radius: 999px;
+  color: var(--gold);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  pointer-events: none; /* it'd be ignored anyway in click-through mode */
+  animation: pulse 2.4s ease-in-out infinite;
+}
+.click-through-banner[hidden] { display: none; }
+.click-through-banner-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 2px rgba(245, 185, 106, 0.32);
+}
+.click-through-banner kbd {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  padding: 1px 5px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(245, 185, 106, 0.42);
+  border-radius: 3px;
+  color: var(--white);
+  margin: 0 1px;
+}
 
 /* ============================================
    Settings popover (anchored under the gear button)
@@ -1113,6 +1158,106 @@ body.hud .tabs { display: none; }
   color: var(--white-faint);
   text-align: right;
   letter-spacing: 0.5px;
+}
+
+/* Image-as-crosshair upload zone */
+.xh-image-drop {
+  margin: 6px 10px 0;
+  padding: 16px;
+  border: 1px dashed rgba(167, 139, 250, 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(167, 139, 250, 0.04);
+  cursor: pointer;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.xh-image-drop:hover {
+  background: rgba(167, 139, 250, 0.10);
+  border-color: rgba(167, 139, 250, 0.55);
+}
+.xh-image-drop.drag-over {
+  background: rgba(167, 139, 250, 0.16);
+  border-color: var(--purple);
+  border-style: solid;
+}
+.xh-image-drop-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  text-align: center;
+}
+.xh-image-drop-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--white);
+}
+.xh-image-drop-hint {
+  font-size: 10px;
+  color: var(--white-faint);
+}
+.xh-image-drop-loaded {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: default;
+}
+.xh-image-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  flex: none;
+  image-rendering: pixelated; /* keep tiny pixel-art crosshairs crisp */
+}
+.xh-image-meta {
+  flex: 1;
+  min-width: 0;
+}
+.xh-image-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--white);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.xh-image-size-info {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--white-faint);
+  margin-top: 2px;
+}
+.xh-image-remove {
+  appearance: none;
+  cursor: pointer;
+  margin-top: 6px;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--red);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.xh-image-remove:hover {
+  background: rgba(227, 134, 134, 0.12);
+  border-color: rgba(227, 134, 134, 0.55);
+}
+.xh-image-note {
+  margin: 8px 10px 0;
+  padding: 8px 10px;
+  background: rgba(167, 139, 250, 0.06);
+  border: 1px solid rgba(167, 139, 250, 0.22);
+  border-radius: 6px;
+  font-size: 10px;
+  color: var(--white-dim);
+  line-height: 1.45;
 }
 
 .xh-presets {

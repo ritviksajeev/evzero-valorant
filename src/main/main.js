@@ -47,10 +47,13 @@ let mainWindow = null;
 let crosshairOverlay = null; // Separate transparent click-through window
 let tray = null;
 let isQuitting = false;
-let isPinned = true; // alwaysOnTop default — toggle via tray or in-app
-let isHud = false;   // overlay-HUD mode flag
+let isPinned = true;     // alwaysOnTop default — toggle via tray or in-app
+let isHud = false;       // overlay-HUD mode flag
+let isClickThrough = false; // pass mouse events to whatever's underneath
 // Cached "normal" geometry so we can restore it when leaving HUD mode.
 let savedNormalBounds = null;
+
+const HOTKEY_CLICK_THROUGH = 'CommandOrControl+Shift+L'; // L = "lock" mouse
 
 function iconPath(name) {
   const p = path.join(__dirname, '..', '..', 'assets', name);
@@ -100,9 +103,23 @@ function createMainWindow() {
     },
   });
 
-  // Use a sane window level — sits above normal apps but below screen savers
-  // so we never float over critical OS UI.
-  if (isPinned) mainWindow.setAlwaysOnTop(true, 'floating');
+  // 'screen-saver' is the highest practical level — keeps the widget above
+  // borderless-windowed games. The 'floating' level can be eclipsed when the
+  // game grabs DWM focus during fullscreen transitions, which manifested as
+  // the widget randomly slipping behind Valorant.
+  if (isPinned) mainWindow.setAlwaysOnTop(true, 'screen-saver');
+
+  // Re-apply pin level whenever the window blurs/focuses — Windows clears the
+  // "always on top" flag when the focused application changes (e.g. when you
+  // alt-tab into the game). Re-applying on every transition keeps it stuck.
+  const reapplyTopmost = () => {
+    if (mainWindow && !mainWindow.isDestroyed() && isPinned) {
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+    }
+  };
+  mainWindow.on('blur',  reapplyTopmost);
+  mainWindow.on('focus', reapplyTopmost);
+  mainWindow.on('show',  reapplyTopmost);
 
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   mainWindow.once('ready-to-show', () => mainWindow.show());
@@ -133,14 +150,14 @@ function toggleWindow() {
     mainWindow.show();
     // Windows clears the always-on-top flag whenever a window is hidden and
     // restored — re-apply it explicitly so the hotkey toggle stays "pinned".
-    if (isPinned) mainWindow.setAlwaysOnTop(true, 'floating');
+    if (isPinned) mainWindow.setAlwaysOnTop(true, 'screen-saver');
     mainWindow.focus();
   }
 }
 
 function setPinned(on) {
   isPinned = !!on;
-  if (mainWindow) mainWindow.setAlwaysOnTop(isPinned, 'floating');
+  if (mainWindow) mainWindow.setAlwaysOnTop(isPinned, 'screen-saver');
   tray?.setContextMenu(buildTrayMenu());
   return isPinned;
 }
@@ -160,6 +177,12 @@ function buildTrayMenu() {
       checked: isHud,
       click: (item) => setHudMode(item.checked),
     },
+    {
+      label: 'Click-through (mouse passes through window)',
+      type: 'checkbox',
+      checked: isClickThrough,
+      click: (item) => setClickThrough(item.checked),
+    },
     { type: 'separator' },
     {
       label: 'Launch at login',
@@ -168,7 +191,8 @@ function buildTrayMenu() {
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
     { type: 'separator' },
-    { label: `Hotkey: ${HOTKEY.replace('CommandOrControl', 'Ctrl')}`, enabled: false },
+    { label: `Show / hide: ${HOTKEY.replace('CommandOrControl', 'Ctrl')}`, enabled: false },
+    { label: `Click-through: ${HOTKEY_CLICK_THROUGH.replace('CommandOrControl', 'Ctrl')}`, enabled: false },
     { label: 'Open evzero.org', click: () => shell.openExternal('https://evzero.org/valorant/') },
     { type: 'separator' },
     { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
@@ -238,7 +262,7 @@ function setHudMode(on) {
   }
   if (wasVisible) {
     mainWindow.show();
-    if (isPinned) mainWindow.setAlwaysOnTop(true, 'floating');
+    if (isPinned) mainWindow.setAlwaysOnTop(true, 'screen-saver');
   }
   mainWindow.webContents.send('evzero:hud-changed', isHud);
   tray?.setContextMenu(buildTrayMenu());
@@ -247,6 +271,23 @@ function setHudMode(on) {
 
 ipcMain.handle('evzero:hud-toggle', () => setHudMode(!isHud));
 ipcMain.handle('evzero:hud-get',    () => isHud);
+
+// Click-through mode — when enabled, the whole window passes mouse events
+// through to whatever's underneath. Useful when you have the widget pinned
+// over the game and don't want stray clicks from gunfire registering on it.
+// `forward: true` lets the page still receive mousemove (so hover effects
+// still update) without intercepting clicks.
+function setClickThrough(on) {
+  isClickThrough = !!on;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setIgnoreMouseEvents(isClickThrough, { forward: true });
+    mainWindow.webContents.send('evzero:click-through-changed', isClickThrough);
+  }
+  tray?.setContextMenu(buildTrayMenu());
+  return isClickThrough;
+}
+ipcMain.handle('evzero:click-through-toggle', () => setClickThrough(!isClickThrough));
+ipcMain.handle('evzero:click-through-get',    () => isClickThrough);
 
 // Native OS notification — used when live mode detects a new match.
 ipcMain.handle('evzero:notify', (_e, opts) => {
@@ -348,6 +389,9 @@ app.whenReady().then(() => {
   createMainWindow();
   createTray();
   globalShortcut.register(HOTKEY, toggleWindow);
+  // Click-through hotkey — must be a GLOBAL shortcut because the renderer
+  // can't receive its own clicks once click-through is enabled.
+  globalShortcut.register(HOTKEY_CLICK_THROUGH, () => setClickThrough(!isClickThrough));
 });
 
 app.on('window-all-closed', (e) => {

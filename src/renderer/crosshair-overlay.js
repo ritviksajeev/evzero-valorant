@@ -15,6 +15,17 @@
 
   function render(xh) {
     if (!xh) { svg.innerHTML = ''; return; }
+
+    // Image mode short-circuits the SVG-shape pass with a centered <image>.
+    // Native browsers play GIFs inside <img> and SVG <image> automatically
+    // so this works for animated overlays without any extra logic.
+    if (xh.imageUse && xh.imageData) {
+      const sz = xh.imageSize || 32;
+      const half = sz / 2;
+      svg.innerHTML = `<image href="${xh.imageData}" x="${-half}" y="${-half}" width="${sz}" height="${sz}" opacity="${xh.imageOp ?? 1}" preserveAspectRatio="xMidYMid meet"/>`;
+      return;
+    }
+
     const out = [];
     const c = xh.color || '#FFFFFF';
     const ot = xh.outlineThick || 0;
