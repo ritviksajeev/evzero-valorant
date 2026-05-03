@@ -97,11 +97,10 @@
   const hudX = $('hud-x');
   const hudRankIcon = $('hud-rank-icon');
   const hudClickThroughBtn = $('hud-clickthrough');
-  const hudSessionRr = $('hud-session-rr');
-  const hudStreak = $('hud-streak');
-  const hudFormStrip = $('hud-form');
+  const hudName = $('hud-name');
   const hudRank = $('hud-rank');
   const hudRr = $('hud-rr');
+  const hudLastResult = $('hud-last-result');
   const hudLastKda = $('hud-last-kda');
 
   const toastEl = $('toast');
@@ -545,86 +544,22 @@
     modesBar.hidden = false;
 
     // HUD: also push current state into the HUD shell so it's ready when toggled.
+    hudName.textContent = `${resolvedName || '—'}${resolvedTag ? `#${resolvedTag}` : ''}`;
     hudRank.textContent = rankTier.textContent;
     hudRr.textContent = rankRr.textContent;
     if (rankIcon.getAttribute('src')) hudRankIcon.src = rankIcon.src; else hudRankIcon.removeAttribute('src');
 
-    // Last-match KDA chip (compact)
     if (recent) {
-      const s = recent.self.stats || {};
       const r = matchResult(recent.m, recent.self);
+      const s = recent.self.stats || {};
+      hudLastResult.textContent = r === 'win' ? 'WIN' : r === 'loss' ? 'LOSS' : '—';
+      hudLastResult.className = 'hud-last-result ' + (r === 'win' ? 'win' : r === 'loss' ? 'loss' : '');
       hudLastKda.textContent = `${s.kills ?? 0}/${s.deaths ?? 0}/${s.assists ?? 0}`;
-      hudLastKda.className = 'hud-stat-value hud-kda ' +
-        (r === 'win' ? 'up' : r === 'loss' ? 'down' : '');
     } else {
+      hudLastResult.textContent = '—';
+      hudLastResult.className = 'hud-last-result';
       hudLastKda.textContent = '—';
-      hudLastKda.className = 'hud-stat-value hud-kda';
     }
-
-    // Session RR delta — sum of RR deltas for matches played today using
-    // the in-process baseline. Henrik returns mmr_change_to_last_game per
-    // match in mmr.history; we derive it from the loaded match set when
-    // possible. Fallback to "—" if there's no signal.
-    const sessionRr = computeSessionRrDelta(matches, account?.puuid);
-    if (sessionRr == null) {
-      hudSessionRr.textContent = '—';
-      hudSessionRr.className = 'hud-stat-value';
-    } else {
-      hudSessionRr.textContent = (sessionRr >= 0 ? '+' : '') + sessionRr + ' RR';
-      hudSessionRr.className = 'hud-stat-value ' + (sessionRr > 0 ? 'up' : sessionRr < 0 ? 'down' : '');
-    }
-
-    // Streak — longest run of same outcome at the newest end of the match list
-    const streak = computeStreak(matches, account?.puuid);
-    if (streak.kind && streak.count > 0) {
-      hudStreak.textContent = streak.count + (streak.kind === 'win' ? 'W' : 'L');
-      hudStreak.className = 'hud-stat-value ' + (streak.kind === 'win' ? 'up' : 'down');
-    } else {
-      hudStreak.textContent = '—';
-      hudStreak.className = 'hud-stat-value';
-    }
-
-    // Last-5 form strip
-    renderHudFormStrip(matches, account?.puuid);
-  }
-
-  // Session RR — sum the per-match `last_change` if Henrik exposes it on the
-  // current MMR endpoint. Otherwise approximate from match wins/losses today
-  // (each W ≈ +20, L ≈ -20). Fairly rough but useful as a "going up vs down"
-  // signal in the HUD.
-  function computeSessionRrDelta(matches, puuid) {
-    if (!matches || !matches.length || !puuid) return null;
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const cutoff = startOfDay.getTime();
-    let wins = 0, losses = 0, count = 0;
-    for (const m of matches) {
-      const t = matchStartMs(m);
-      if (t && t < cutoff) break;
-      const self = findSelf(m, puuid);
-      if (!self) continue;
-      const r = matchResult(m, self);
-      if (r === 'win') wins++;
-      else if (r === 'loss') losses++;
-      count++;
-    }
-    if (!count) return null;
-    return (wins - losses) * 20;
-  }
-
-  function computeStreak(matches, puuid) {
-    if (!matches || !matches.length || !puuid) return { kind: null, count: 0 };
-    let kind = null, count = 0;
-    for (const m of matches) {
-      const self = findSelf(m, puuid);
-      if (!self) continue;
-      const r = matchResult(m, self);
-      if (r !== 'win' && r !== 'loss') break;
-      if (kind == null) { kind = r; count = 1; continue; }
-      if (r !== kind) break;
-      count++;
-    }
-    return { kind, count };
   }
 
   // Serialise the most-recent match into the compact payload the scoreboard
@@ -735,25 +670,6 @@
       else toast('Scoreboard overlay shown');
     }
   });
-
-  function renderHudFormStrip(matches, puuid) {
-    if (!hudFormStrip) return;
-    const cells = [];
-    const recent = (matches || []).slice(0, 5);
-    // Render oldest -> newest, left to right
-    const ordered = recent.slice().reverse();
-    for (let i = 0; i < 5; i++) {
-      if (i >= ordered.length) {
-        cells.push('<span class="hud-form-cell empty"></span>');
-        continue;
-      }
-      const self = findSelf(ordered[i], puuid);
-      const r = self ? matchResult(ordered[i], self) : null;
-      const cls = r === 'win' ? 'win' : r === 'loss' ? 'loss' : r === 'draw' ? 'draw' : 'empty';
-      cells.push(`<span class="hud-form-cell ${cls}"></span>`);
-    }
-    hudFormStrip.innerHTML = cells.join('');
-  }
 
   function renderScoreboard(match, puuid) {
     const players = allPlayers(match);
@@ -1119,9 +1035,6 @@
       // Make sure preview and code are up to date the first time we land here.
       renderCrosshair();
     }
-    if (name === 'maps') {
-      ensureMapsLoaded();
-    }
   }
   tabsBar.addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
@@ -1129,140 +1042,12 @@
     setView(tab.dataset.view);
   });
 
-  // ---- Maps view -----------------------------------------------------
-  // Fetched once from valorant-api.com on first visit, then cached in
-  // localStorage for a week (rare data churn, low cost). The grid shows
-  // every standard map — clicking a card opens a detail panel with the
-  // splash + callouts image and your personal W/L on that map.
-  const STORAGE_MAPS_CACHE = 'evz-maps-cache-v1';
-  const MAPS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-  let mapsList = null;
-  let mapsLoadingPromise = null;
-
-  async function ensureMapsLoaded() {
-    if (mapsList) { renderMapsGrid(); return; }
-    if (mapsLoadingPromise) return mapsLoadingPromise;
-    // Try cache first
-    try {
-      const c = JSON.parse(localStorage.getItem(STORAGE_MAPS_CACHE) || 'null');
-      if (c && c.at && (Date.now() - c.at) < MAPS_CACHE_TTL_MS && Array.isArray(c.data)) {
-        mapsList = c.data;
-        renderMapsGrid();
-        return;
-      }
-    } catch {}
-    mapsLoadingPromise = (async () => {
-      try {
-        const r = await fetch('https://valorant-api.com/v1/maps');
-        const j = await r.json();
-        const all = (j && j.data) || [];
-        // Filter out non-playable internal maps (Range / The Range / no mapUrl)
-        const playable = all.filter((m) =>
-          m && m.displayName && m.mapUrl && /^\/Game\/Maps\//.test(m.mapUrl)
-            && !/range/i.test(m.displayName)
-            && !/basic/i.test(m.displayName)
-        );
-        mapsList = playable;
-        try {
-          localStorage.setItem(STORAGE_MAPS_CACHE, JSON.stringify({ at: Date.now(), data: playable }));
-        } catch {}
-        renderMapsGrid();
-      } catch (e) {
-        console.warn('[evz] maps fetch failed', e);
-        const grid = document.getElementById('maps-grid');
-        grid.innerHTML = '<div class="maps-empty">Couldn’t load map data. Check your connection.</div>';
-      } finally {
-        mapsLoadingPromise = null;
-      }
-    })();
-    return mapsLoadingPromise;
+  // Forget any previous maps cache — feature was removed.
+  try { localStorage.removeItem('evz-maps-cache-v1'); } catch {}
+  // Reset stored view if it's pointing at the removed maps tab.
+  if (localStorage.getItem(STORAGE_VIEW) === 'maps') {
+    localStorage.setItem(STORAGE_VIEW, 'tracker');
   }
-
-  function getPersonalMapStats(mapName) {
-    if (!lastCtx || !window.__lastMatches) return null;
-    const matches = window.__lastMatches;
-    let wins = 0, losses = 0, draws = 0;
-    for (const m of matches) {
-      const md = m.metadata || {};
-      const mn = (md.map?.name || md.map || '').toLowerCase();
-      if (mn !== mapName.toLowerCase()) continue;
-      const self = findSelf(m, lastCtx.puuid);
-      if (!self) continue;
-      const r = matchResult(m, self);
-      if (r === 'win') wins++;
-      else if (r === 'loss') losses++;
-      else if (r === 'draw') draws++;
-    }
-    const played = wins + losses + draws;
-    if (!played) return null;
-    return { wins, losses, draws, played, winrate: (wins + losses) ? wins / (wins + losses) : 0 };
-  }
-
-  function renderMapsGrid() {
-    const grid = document.getElementById('maps-grid');
-    const countEl = document.getElementById('maps-count');
-    const detail = document.getElementById('map-detail');
-    if (detail) detail.hidden = true;
-    if (!mapsList || !mapsList.length) {
-      grid.innerHTML = '<div class="maps-empty">No maps loaded yet.</div>';
-      return;
-    }
-    countEl.textContent = String(mapsList.length);
-    grid.innerHTML = mapsList.map((m) => {
-      const stats = getPersonalMapStats(m.displayName);
-      let statHtml = '';
-      if (stats) {
-        const wrPct = Math.round(stats.winrate * 100);
-        const cls = wrPct >= 55 ? 'win' : wrPct <= 45 ? 'loss' : '';
-        statHtml = `<span class="map-card-stats ${cls}">${stats.wins}W ${stats.losses}L</span>`;
-      }
-      return `
-        <div class="map-card" data-map="${esc(m.displayName)}">
-          ${m.splash ? `<img class="map-card-img" src="${esc(m.splash)}" alt="" loading="lazy"/>` : ''}
-          <div class="map-card-overlay"></div>
-          ${statHtml}
-          <div class="map-card-name">${esc(m.displayName)}</div>
-        </div>
-      `;
-    }).join('');
-    grid.style.display = 'grid';
-    // Bind click handlers
-    grid.querySelectorAll('.map-card').forEach((card) => {
-      card.addEventListener('click', () => openMapDetail(card.dataset.map));
-    });
-  }
-
-  function openMapDetail(mapName) {
-    const m = mapsList?.find((x) => x.displayName === mapName);
-    if (!m) return;
-    const grid = document.getElementById('maps-grid');
-    const detail = document.getElementById('map-detail');
-    grid.style.display = 'none';
-    detail.hidden = false;
-    document.getElementById('map-detail-name').textContent = m.displayName;
-    document.getElementById('map-detail-coords').textContent = m.coordinates || '';
-    const splashEl = document.getElementById('map-detail-splash');
-    if (m.splash) splashEl.src = m.splash; else splashEl.removeAttribute('src');
-    const calloutsEl = document.getElementById('map-detail-callouts');
-    if (m.displayIcon) calloutsEl.src = m.displayIcon;
-    else if (m.listViewIcon) calloutsEl.src = m.listViewIcon;
-    else calloutsEl.removeAttribute('src');
-    const stats = getPersonalMapStats(mapName);
-    const statsBlock = document.getElementById('map-detail-stats');
-    if (stats) {
-      statsBlock.hidden = false;
-      document.getElementById('map-detail-played').textContent = String(stats.played);
-      document.getElementById('map-detail-wl').textContent = `${stats.wins}–${stats.losses}`;
-      document.getElementById('map-detail-wr').textContent = `${Math.round(stats.winrate * 100)}%`;
-    } else {
-      statsBlock.hidden = true;
-    }
-    detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-  document.getElementById('map-detail-back').addEventListener('click', () => {
-    document.getElementById('map-detail').hidden = true;
-    document.getElementById('maps-grid').style.display = 'grid';
-  });
 
   // ---- Primary account (auto-load on launch) -------------------------
   const setPrimaryName = document.getElementById('set-primary-name');
