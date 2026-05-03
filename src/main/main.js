@@ -40,8 +40,8 @@ const WIN_MIN_H = 480;
 // HUD ("overlay") mode dimensions — tiny floating widget that sits at a corner
 // of the screen during gameplay. Just a smaller window state; no game-process
 // interaction, so Vanguard treats it identically to the full widget.
-const HUD_W = 300;
-const HUD_H = 150;
+const HUD_W = 320;
+const HUD_H = 178;
 
 let mainWindow = null;
 let crosshairOverlay = null; // Separate transparent click-through window
@@ -241,15 +241,25 @@ ipcMain.handle('evzero:window-get-pin',    () => isPinned);
 function setHudMode(on) {
   isHud = !!on;
   if (!mainWindow) return isHud;
-  // Hide-then-show wraps the resize so Windows doesn't flash the snap-layout
-  // size hint ("300×150") next to the cursor while the window changes shape.
-  // Also passes animate=false to setBounds for the same reason.
+
+  // Three layers of size-hint suppression:
+  //   1. Force the window invisible by dropping opacity to 0 BEFORE resizing.
+  //      Windows draws the snap-layout / resize hint on the visible window;
+  //      if the window has 0 alpha for the duration of the resize there's
+  //      nothing for the hint to attach to.
+  //   2. Hide and re-show around the bounds change so DWM treats it as a
+  //      window state transition rather than a live resize.
+  //   3. In HUD mode itself, mark the window as non-resizable so the user
+  //      can't drag a corner and trigger the live-resize tooltip.
   const wasVisible = mainWindow.isVisible();
+  mainWindow.setOpacity(0);
   if (wasVisible) mainWindow.hide();
+
   if (isHud) {
     savedNormalBounds = mainWindow.getBounds();
     const { workArea } = screen.getPrimaryDisplay();
-    mainWindow.setMinimumSize(220, 110);
+    mainWindow.setResizable(false);
+    mainWindow.setMinimumSize(HUD_W, HUD_H);
     mainWindow.setBounds({
       x: workArea.x + workArea.width - HUD_W - 24,
       y: workArea.y + 24,
@@ -258,6 +268,7 @@ function setHudMode(on) {
     }, false);
     if (!isPinned) setPinned(true); // HUD always wants always-on-top
   } else {
+    mainWindow.setResizable(true);
     mainWindow.setMinimumSize(WIN_MIN_W, WIN_MIN_H);
     if (savedNormalBounds) {
       mainWindow.setBounds(savedNormalBounds, false);
@@ -265,10 +276,14 @@ function setHudMode(on) {
       mainWindow.setSize(WIN_W, WIN_H, false);
     }
   }
+
   if (wasVisible) {
     mainWindow.show();
     if (isPinned) mainWindow.setAlwaysOnTop(true, 'screen-saver');
   }
+  // Restore opacity once the new bounds are in place.
+  mainWindow.setOpacity(1);
+
   mainWindow.webContents.send('evzero:hud-changed', isHud);
   tray?.setContextMenu(buildTrayMenu());
   return isHud;

@@ -102,6 +102,8 @@
   const hudRr = $('hud-rr');
   const hudLastResult = $('hud-last-result');
   const hudLastKda = $('hud-last-kda');
+  const hudSession = $('hud-session');
+  const hudFormStrip = $('hud-form');
 
   const toastEl = $('toast');
   const toastTextEl = $('toast-text');
@@ -560,6 +562,64 @@
       hudLastResult.className = 'hud-last-result';
       hudLastKda.textContent = '—';
     }
+
+    // ---- Footer: session RR + last-5 form strip ----------------------
+    // Session RR is approximated from today's W/L count (each W ≈ +20, L ≈ -20).
+    // Henrik's per-match `last_change` field would be authoritative but it's
+    // not consistently populated, so this rough heuristic gives a usable
+    // "going up vs down" signal. Reads as "—" if no match was played today.
+    const sessionRr = computeSessionRrDelta(matches, account?.puuid);
+    if (sessionRr == null) {
+      hudSession.textContent = '—';
+      hudSession.className = 'hud-session-value';
+    } else {
+      hudSession.textContent = (sessionRr >= 0 ? '+' : '') + sessionRr + ' RR';
+      hudSession.className = 'hud-session-value ' + (sessionRr > 0 ? 'up' : sessionRr < 0 ? 'down' : '');
+    }
+
+    renderHudFormStrip(matches, account?.puuid);
+  }
+
+  // Roughly estimates today's net RR from match results, since Henrik's
+  // per-match RR delta is inconsistently populated. Returns null if no match
+  // was played today (so the HUD can show "—" instead of "0").
+  function computeSessionRrDelta(matches, puuid) {
+    if (!matches || !matches.length || !puuid) return null;
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const cutoff = startOfDay.getTime();
+    let wins = 0, losses = 0, count = 0;
+    for (const m of matches) {
+      const t = matchStartMs(m);
+      if (t && t < cutoff) break;
+      const self = findSelf(m, puuid);
+      if (!self) continue;
+      const r = matchResult(m, self);
+      if (r === 'win') wins++;
+      else if (r === 'loss') losses++;
+      count++;
+    }
+    if (!count) return null;
+    return (wins - losses) * 20;
+  }
+
+  // Last-5 results as 5 colour cells, oldest -> newest left to right.
+  function renderHudFormStrip(matches, puuid) {
+    if (!hudFormStrip) return;
+    const recent = (matches || []).slice(0, 5);
+    const ordered = recent.slice().reverse();
+    const cells = [];
+    for (let i = 0; i < 5; i++) {
+      if (i >= ordered.length) {
+        cells.push('<span class="hud-form-cell empty"></span>');
+        continue;
+      }
+      const self = findSelf(ordered[i], puuid);
+      const r = self ? matchResult(ordered[i], self) : null;
+      const cls = r === 'win' ? 'win' : r === 'loss' ? 'loss' : r === 'draw' ? 'draw' : 'empty';
+      cells.push(`<span class="hud-form-cell ${cls}"></span>`);
+    }
+    hudFormStrip.innerHTML = cells.join('');
   }
 
   // Serialise the most-recent match into the compact payload the scoreboard
