@@ -45,6 +45,7 @@ const HUD_H = 150;
 
 let mainWindow = null;
 let crosshairOverlay = null; // Separate transparent click-through window
+let scoreboardOverlay = null; // Separate scoreboard overlay window (movable + draggable)
 let tray = null;
 let isQuitting = false;
 let isPinned = true;     // alwaysOnTop default — toggle via tray or in-app
@@ -378,6 +379,60 @@ ipcMain.handle('evzero:crosshair-overlay-update', (_e, payload) => {
 });
 ipcMain.handle('evzero:crosshair-overlay-is-shown', () => {
   return !!(crosshairOverlay && !crosshairOverlay.isDestroyed() && crosshairOverlay.isVisible());
+});
+
+// ---- Scoreboard overlay window -------------------------------------------
+// Compact 380x280 frameless transparent window pinned to a corner. Unlike
+// the crosshair overlay this one is INTERACTIVE — user can drag it around
+// and click rows. Renders the most recent match's scoreboard.
+
+function createScoreboardOverlay() {
+  if (scoreboardOverlay && !scoreboardOverlay.isDestroyed()) return scoreboardOverlay;
+  const { workArea } = screen.getPrimaryDisplay();
+  const W = 380, H = 320;
+  scoreboardOverlay = new BrowserWindow({
+    width: W,
+    height: H,
+    x: workArea.x + workArea.width - W - 24,
+    y: workArea.y + workArea.height - H - 24,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    fullscreenable: false,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  scoreboardOverlay.setAlwaysOnTop(true, 'screen-saver');
+  scoreboardOverlay.loadFile(path.join(__dirname, '..', 'renderer', 'scoreboard-overlay.html'));
+  return scoreboardOverlay;
+}
+
+ipcMain.handle('evzero:scoreboard-overlay-show', (_e, payload) => {
+  const w = createScoreboardOverlay();
+  w.show();
+  w.webContents.send('evzero:scoreboard-config', payload || null);
+  return true;
+});
+ipcMain.handle('evzero:scoreboard-overlay-hide', () => {
+  if (scoreboardOverlay && !scoreboardOverlay.isDestroyed()) scoreboardOverlay.hide();
+  return true;
+});
+ipcMain.handle('evzero:scoreboard-overlay-update', (_e, payload) => {
+  if (scoreboardOverlay && !scoreboardOverlay.isDestroyed()) {
+    scoreboardOverlay.webContents.send('evzero:scoreboard-config', payload || null);
+  }
+  return true;
+});
+ipcMain.handle('evzero:scoreboard-overlay-is-shown', () => {
+  return !!(scoreboardOverlay && !scoreboardOverlay.isDestroyed() && scoreboardOverlay.isVisible());
 });
 
 // ---- App lifecycle ------------------------------------------------------

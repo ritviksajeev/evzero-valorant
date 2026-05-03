@@ -4,7 +4,7 @@ Compact frameless **overlay widget** for Valorant stats. Sits always-on-top alon
 
 ## Status
 
-**v0.5** — click-through mode, custom image/GIF crosshair, fixed always-on-top vs game, stronger bug fixes.
+**v0.6** — sparkline trends, HUD redesign, scoreboard overlay window, maps view.
 
 ## Features
 
@@ -20,6 +20,30 @@ Tracker mode (420×680, frameless, always-on-top)
 - Saved players: pin a player → quick-search chip above the search row
 - Live mode: polls every 30s, visible countdown, fresh-row pulse + native OS notification when a new match lands
 - Settings popover (gear icon): pin, launch-at-login, notifications toggle, hotkey hint, version
+
+**Tracker view extras (v0.6)**
+
+- Sparkline trends below the stats row — KDA / ACS / HS% across the loaded
+  match set, oldest → newest, with the per-stat delta vs first match
+- "Scoreboard overlay" toggle in the matches header — opens a separate
+  always-on-top scoreboard window for the most recent match (draggable,
+  closeable, updates live with every search)
+
+**Maps view (v0.6)**
+
+- Gallery of every standard Valorant map, splashes pulled from
+  valorant-api.com (cached one week in localStorage)
+- Click a map → detail panel with the splash, callouts diagram, and your
+  personal record on that map (computed from the loaded matches)
+
+**HUD overlay redesign (v0.6)**
+
+- Game-style frame with ambient purple glow and proper drag titlebar
+- Three compact stat cells: session RR delta, win/loss streak, last-match
+  KDA (coloured by W/L)
+- Last-5 form strip — colour-coded cells along the bottom edge
+- Click-through toggle now lives inside the HUD too, not just the main
+  widget
 
 **Crosshair view**
 

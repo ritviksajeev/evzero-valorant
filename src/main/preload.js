@@ -60,6 +60,18 @@ contextBridge.exposeInMainWorld('evzero', {
     return () => ipcRenderer.removeListener('evzero:crosshair-config', handler);
   },
 
+  // Scoreboard overlay (separate INTERACTIVE always-on-top window — draggable,
+  // shows the most recent match's scoreboard).
+  scoreboardOverlayShow:    (cfg) => ipcRenderer.invoke('evzero:scoreboard-overlay-show', cfg),
+  scoreboardOverlayHide:    ()    => ipcRenderer.invoke('evzero:scoreboard-overlay-hide'),
+  scoreboardOverlayUpdate:  (cfg) => ipcRenderer.invoke('evzero:scoreboard-overlay-update', cfg),
+  scoreboardOverlayIsShown: ()    => ipcRenderer.invoke('evzero:scoreboard-overlay-is-shown'),
+  onScoreboardConfig: (cb) => {
+    const handler = (_e, cfg) => cb(cfg);
+    ipcRenderer.on('evzero:scoreboard-config', handler);
+    return () => ipcRenderer.removeListener('evzero:scoreboard-config', handler);
+  },
+
   // Auto-launch toggle
   getAutoLaunch: () => ipcRenderer.invoke('evzero:get-auto-launch'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('evzero:set-auto-launch', enabled),

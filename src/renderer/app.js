@@ -71,6 +71,8 @@
   const matchesBlock = $('matches-block');
   const matchesList = $('matches-list');
   const matchesCount = $('matches-count');
+  const sbOverlayBtn = $('sb-overlay-toggle');
+  const sbOverlayLabel = $('sb-overlay-label');
 
   const favsWrap = $('favs');
   const favsList = $('favs-list');
@@ -94,10 +96,12 @@
   const hudShell = $('hud-shell');
   const hudX = $('hud-x');
   const hudRankIcon = $('hud-rank-icon');
-  const hudName = $('hud-name');
+  const hudClickThroughBtn = $('hud-clickthrough');
+  const hudSessionRr = $('hud-session-rr');
+  const hudStreak = $('hud-streak');
+  const hudFormStrip = $('hud-form');
   const hudRank = $('hud-rank');
   const hudRr = $('hud-rr');
-  const hudLastResult = $('hud-last-result');
   const hudLastKda = $('hud-last-kda');
 
   const toastEl = $('toast');
@@ -169,12 +173,20 @@
   tbClickThrough.addEventListener('click', async () => {
     await evz.clickThroughToggle?.();
   });
+  // Same toggle from inside the HUD shell so users in HUD mode aren't
+  // forced back to the global hotkey.
+  if (hudClickThroughBtn) {
+    hudClickThroughBtn.addEventListener('click', async () => {
+      await evz.clickThroughToggle?.();
+    });
+  }
   // The main process emits this whenever click-through changes — keep the
   // titlebar button + bottom banner in sync regardless of which control
   // (titlebar / hotkey / tray) the user used.
   if (evz.onClickThroughChanged) {
     evz.onClickThroughChanged((on) => {
       tbClickThrough.classList.toggle('active', on);
+      hudClickThroughBtn?.classList.toggle('active', on);
       ctBanner.hidden = !on;
       if (on) toast('Click-through ON · Ctrl+Shift+L to disable');
     });
@@ -182,6 +194,7 @@
   if (evz.clickThroughGet) {
     evz.clickThroughGet().then((on) => {
       tbClickThrough.classList.toggle('active', !!on);
+      hudClickThroughBtn?.classList.toggle('active', !!on);
       ctBanner.hidden = !on;
     });
   }
@@ -333,6 +346,99 @@
     return { name, tag };
   }
 
+  // ---- Per-match trend series ---------------------------------------
+  // Returns parallel arrays (oldest first) with KDA / ACS / HS% per match.
+  // Used by the sparkline renderer.
+  function buildTrendSeries(matches, puuid) {
+    const ordered = matches.slice().reverse(); // oldest left, newest right
+    const kda = [], acs = [], hs = [];
+    for (const m of ordered) {
+      const self = findSelf(m, puuid);
+      if (!self) continue;
+      const s = self.stats || {};
+      const k = s.kills || 0, d = s.deaths || 0, a = s.assists || 0;
+      kda.push(d ? (k + a) / d : k + a);
+      const rc = roundCount(m) || 1;
+      acs.push(s.score ? s.score / rc : 0);
+      const shots = (s.headshots || 0) + (s.bodyshots || 0) + (s.legshots || 0);
+      hs.push(shots ? (s.headshots || 0) / shots : 0);
+    }
+    return { kda, acs, hs };
+  }
+
+  // Build an SVG polyline path (and a faint area fill) inside a 100x28 viewBox.
+  // Caller writes the result into the pre-existing <svg> tag.
+  function renderSparkline(svg, series, opts = {}) {
+    if (!svg) return;
+    if (!series || series.length < 2) {
+      svg.innerHTML = '<text x="50" y="18" fill="rgba(255,255,255,0.25)" font-family="JetBrains Mono" font-size="8" text-anchor="middle">need 2+ matches</text>';
+      return;
+    }
+    const W = 100, H = 28, PAD = 2;
+    const min = Math.min(...series);
+    const max = Math.max(...series);
+    const span = Math.max(max - min, 0.0001);
+    const x = (i) => series.length === 1 ? W / 2 : (i / (series.length - 1)) * W;
+    const y = (v) => PAD + (H - PAD * 2) * (1 - (v - min) / span);
+    const points = series.map((v, i) => `${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(' ');
+    const area = `M 0,${H} ` +
+      series.map((v, i) => `L ${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(' ') +
+      ` L ${W},${H} Z`;
+
+    const accent = opts.accent || '#a78bfa';
+    const id = 'sg-' + Math.random().toString(36).slice(2, 8);
+    svg.innerHTML = `
+      <defs>
+        <linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stop-color="${accent}" stop-opacity="0.45"/>
+          <stop offset="100%" stop-color="${accent}" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="${area}" fill="url(#${id})"/>
+      <polyline points="${points}" fill="none" stroke="${accent}" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${series.map((v, i) =>
+        `<circle cx="${x(i).toFixed(2)}" cy="${y(v).toFixed(2)}" r="${i === series.length - 1 ? 1.6 : 0.9}" fill="${accent}" />`
+      ).join('')}
+    `;
+  }
+
+  function renderTrends(matches, puuid) {
+    const wrap = document.getElementById('trends');
+    if (!wrap) return;
+    if (!matches || matches.length < 2) { wrap.hidden = true; return; }
+    const series = buildTrendSeries(matches, puuid);
+    wrap.hidden = false;
+    renderSparkline(document.getElementById('trend-kda'), series.kda, { accent: '#a78bfa' });
+    renderSparkline(document.getElementById('trend-acs'), series.acs, { accent: '#7ed99d' });
+    renderSparkline(document.getElementById('trend-hs'),  series.hs,  { accent: '#f5b96a' });
+
+    // Set a "delta vs first" hint on each label
+    const meta = (cur, first, fmt, suffix = '') => {
+      if (!Number.isFinite(cur) || !Number.isFinite(first)) return ['—', ''];
+      const delta = cur - first;
+      const cls = delta > 0.001 ? 'up' : delta < -0.001 ? 'down' : '';
+      const sign = delta >= 0 ? '+' : '';
+      return [`${fmt(cur)}${suffix}  ${sign}${fmt(delta)}`, cls];
+    };
+    const last = (a) => a[a.length - 1];
+    const first = (a) => a[0];
+
+    const [kdaText, kdaCls] = meta(last(series.kda), first(series.kda), (n) => n.toFixed(2));
+    const trendKdaMeta = document.getElementById('trend-kda-meta');
+    trendKdaMeta.textContent = kdaText;
+    trendKdaMeta.className = 'trend-meta ' + kdaCls;
+
+    const [acsText, acsCls] = meta(last(series.acs), first(series.acs), (n) => Math.round(n).toString());
+    const trendAcsMeta = document.getElementById('trend-acs-meta');
+    trendAcsMeta.textContent = acsText;
+    trendAcsMeta.className = 'trend-meta ' + acsCls;
+
+    const [hsText, hsCls] = meta(last(series.hs), first(series.hs), (n) => (n * 100).toFixed(0), '%');
+    const trendHsMeta = document.getElementById('trend-hs-meta');
+    trendHsMeta.textContent = hsText;
+    trendHsMeta.className = 'trend-meta ' + hsCls;
+  }
+
   // ---- Aggregate stats over the match set ----------------------------
   function aggregate(matches, puuid) {
     let wins = 0, losses = 0, draws = 0;
@@ -439,22 +545,214 @@
     modesBar.hidden = false;
 
     // HUD: also push current state into the HUD shell so it's ready when toggled.
-    hudName.textContent = `${resolvedName || '—'}${resolvedTag ? `#${resolvedTag}` : ''}`;
     hudRank.textContent = rankTier.textContent;
     hudRr.textContent = rankRr.textContent;
     if (rankIcon.getAttribute('src')) hudRankIcon.src = rankIcon.src; else hudRankIcon.removeAttribute('src');
 
+    // Last-match KDA chip (compact)
     if (recent) {
-      const r = matchResult(recent.m, recent.self);
       const s = recent.self.stats || {};
-      hudLastResult.textContent = r === 'win' ? 'WIN' : r === 'loss' ? 'LOSS' : '—';
-      hudLastResult.className = 'hud-last-result ' + (r === 'win' ? 'win' : r === 'loss' ? 'loss' : '');
+      const r = matchResult(recent.m, recent.self);
       hudLastKda.textContent = `${s.kills ?? 0}/${s.deaths ?? 0}/${s.assists ?? 0}`;
+      hudLastKda.className = 'hud-stat-value hud-kda ' +
+        (r === 'win' ? 'up' : r === 'loss' ? 'down' : '');
     } else {
-      hudLastResult.textContent = '—';
-      hudLastResult.className = 'hud-last-result';
       hudLastKda.textContent = '—';
+      hudLastKda.className = 'hud-stat-value hud-kda';
     }
+
+    // Session RR delta — sum of RR deltas for matches played today using
+    // the in-process baseline. Henrik returns mmr_change_to_last_game per
+    // match in mmr.history; we derive it from the loaded match set when
+    // possible. Fallback to "—" if there's no signal.
+    const sessionRr = computeSessionRrDelta(matches, account?.puuid);
+    if (sessionRr == null) {
+      hudSessionRr.textContent = '—';
+      hudSessionRr.className = 'hud-stat-value';
+    } else {
+      hudSessionRr.textContent = (sessionRr >= 0 ? '+' : '') + sessionRr + ' RR';
+      hudSessionRr.className = 'hud-stat-value ' + (sessionRr > 0 ? 'up' : sessionRr < 0 ? 'down' : '');
+    }
+
+    // Streak — longest run of same outcome at the newest end of the match list
+    const streak = computeStreak(matches, account?.puuid);
+    if (streak.kind && streak.count > 0) {
+      hudStreak.textContent = streak.count + (streak.kind === 'win' ? 'W' : 'L');
+      hudStreak.className = 'hud-stat-value ' + (streak.kind === 'win' ? 'up' : 'down');
+    } else {
+      hudStreak.textContent = '—';
+      hudStreak.className = 'hud-stat-value';
+    }
+
+    // Last-5 form strip
+    renderHudFormStrip(matches, account?.puuid);
+  }
+
+  // Session RR — sum the per-match `last_change` if Henrik exposes it on the
+  // current MMR endpoint. Otherwise approximate from match wins/losses today
+  // (each W ≈ +20, L ≈ -20). Fairly rough but useful as a "going up vs down"
+  // signal in the HUD.
+  function computeSessionRrDelta(matches, puuid) {
+    if (!matches || !matches.length || !puuid) return null;
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const cutoff = startOfDay.getTime();
+    let wins = 0, losses = 0, count = 0;
+    for (const m of matches) {
+      const t = matchStartMs(m);
+      if (t && t < cutoff) break;
+      const self = findSelf(m, puuid);
+      if (!self) continue;
+      const r = matchResult(m, self);
+      if (r === 'win') wins++;
+      else if (r === 'loss') losses++;
+      count++;
+    }
+    if (!count) return null;
+    return (wins - losses) * 20;
+  }
+
+  function computeStreak(matches, puuid) {
+    if (!matches || !matches.length || !puuid) return { kind: null, count: 0 };
+    let kind = null, count = 0;
+    for (const m of matches) {
+      const self = findSelf(m, puuid);
+      if (!self) continue;
+      const r = matchResult(m, self);
+      if (r !== 'win' && r !== 'loss') break;
+      if (kind == null) { kind = r; count = 1; continue; }
+      if (r !== kind) break;
+      count++;
+    }
+    return { kind, count };
+  }
+
+  // Serialise the most-recent match into the compact payload the scoreboard
+  // overlay renderer expects. Keeping this small/explicit keeps the IPC
+  // surface tight — only the strings we display, no nested raw objects.
+  function buildScoreboardPayload(matches, puuid) {
+    if (!matches || !matches.length) return null;
+    const m = matches[0];
+    const players = allPlayers(m);
+    if (!players.length) return null;
+    const totalRounds = roundCount(m) || 1;
+    const teams = Array.isArray(m.teams) ? m.teams : (m.teams ? Object.values(m.teams) : []);
+    const self = findSelf(m, puuid);
+    const selfResult = self ? matchResult(m, self) : 'unknown';
+
+    // Group players by team_id.
+    const groups = new Map();
+    for (const p of players) {
+      const key = String(p.team_id || p.team || 'unknown').toLowerCase();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(p);
+    }
+    const myTeam = self ? String(self.team_id || self.team || '').toLowerCase() : '';
+
+    const teamObjs = [...groups.entries()].map(([key, ps]) => {
+      ps.sort((a, b) => (b.stats?.score ?? 0) - (a.stats?.score ?? 0));
+      const teamMeta = teams.find((t) =>
+        String(t.team_id || t.team || '').toLowerCase() === key
+      );
+      const score = (teamMeta && (teamMeta.rounds?.won ?? teamMeta.rounds_won)) ?? null;
+      const won = teamMeta && typeof teamMeta.won === 'boolean' ? teamMeta.won : null;
+      const rows = ps.map((p, i) => {
+        const id = resolvePlayerIdentity(p);
+        const aname = (p.agent && p.agent.name) || p.character || '';
+        const isSelf = p.puuid === puuid;
+        const fallback = !id && isSelf && lastCtx?.name
+          ? null   // self uses lastCtx fallback below
+          : (aname ? `${aname} player` : `Player ${i + 1}`);
+        const finalName = id?.name || (isSelf && lastCtx?.name ? lastCtx.name : '');
+        const finalTag  = id?.tag  || (isSelf && lastCtx?.tag  ? lastCtx.tag  : '');
+        const s = p.stats || {};
+        const acs = s.score && totalRounds ? Math.round(s.score / totalRounds) : null;
+        return {
+          self: isSelf,
+          name: finalName,
+          tag: finalTag,
+          fallback,
+          agentId: (p.agent && p.agent.id) || p.character_id || '',
+          k: s.kills ?? 0,
+          d: s.deaths ?? 0,
+          a: s.assists ?? 0,
+          acs,
+        };
+      });
+      return {
+        label: key.toUpperCase(),
+        won,
+        score,
+        rows,
+      };
+    });
+    // Self team first
+    teamObjs.sort((a, b) => {
+      if (a.label.toLowerCase() === myTeam) return -1;
+      if (b.label.toLowerCase() === myTeam) return 1;
+      return 0;
+    });
+
+    return {
+      map: (m.metadata && (m.metadata.map?.name || m.metadata.map)) || 'Unknown',
+      mode: (m.metadata && (m.metadata.queue?.name || m.metadata.queue || m.metadata.mode)) || '',
+      selfResult,
+      teams: teamObjs,
+    };
+  }
+
+  function refreshScoreboardOverlay(matches, puuid) {
+    const payload = buildScoreboardPayload(matches, puuid);
+    try { localStorage.setItem('evz-overlay-scoreboard', JSON.stringify(payload || null)); } catch {}
+    evz.scoreboardOverlayUpdate?.(payload);
+  }
+
+  // Sync the toggle button with the actual window state on launch and after
+  // any toggle, so re-opening the app while the overlay is still visible
+  // shows the correct active styling.
+  let sbOverlayShown = false;
+  function setSbOverlayBtn(on) {
+    sbOverlayShown = on;
+    sbOverlayBtn.classList.toggle('active', on);
+    sbOverlayLabel.textContent = on ? 'Hide overlay' : 'Scoreboard overlay';
+  }
+  if (evz.scoreboardOverlayIsShown) {
+    evz.scoreboardOverlayIsShown().then((on) => setSbOverlayBtn(!!on));
+  }
+  sbOverlayBtn.addEventListener('click', async () => {
+    if (sbOverlayShown) {
+      await evz.scoreboardOverlayHide?.();
+      setSbOverlayBtn(false);
+      toast('Scoreboard overlay hidden');
+    } else {
+      const payload = buildScoreboardPayload(
+        lastCtx ? (window.__lastMatches || []) : [],
+        lastCtx?.puuid
+      );
+      await evz.scoreboardOverlayShow?.(payload);
+      setSbOverlayBtn(true);
+      if (!lastCtx) toast('Search a player first to populate the overlay');
+      else toast('Scoreboard overlay shown');
+    }
+  });
+
+  function renderHudFormStrip(matches, puuid) {
+    if (!hudFormStrip) return;
+    const cells = [];
+    const recent = (matches || []).slice(0, 5);
+    // Render oldest -> newest, left to right
+    const ordered = recent.slice().reverse();
+    for (let i = 0; i < 5; i++) {
+      if (i >= ordered.length) {
+        cells.push('<span class="hud-form-cell empty"></span>');
+        continue;
+      }
+      const self = findSelf(ordered[i], puuid);
+      const r = self ? matchResult(ordered[i], self) : null;
+      const cls = r === 'win' ? 'win' : r === 'loss' ? 'loss' : r === 'draw' ? 'draw' : 'empty';
+      cells.push(`<span class="hud-form-cell ${cls}"></span>`);
+    }
+    hudFormStrip.innerHTML = cells.join('');
   }
 
   function renderScoreboard(match, puuid) {
@@ -685,7 +983,11 @@
       }
 
       renderProfile(account, mmr, matches, name, tag);
+      renderTrends(matches, account.puuid);
       renderMatches(matches, account.puuid, freshIds);
+      // Stash so the scoreboard-overlay button can rebuild on demand.
+      window.__lastMatches = matches;
+      refreshScoreboardOverlay(matches, account.puuid);
 
       const ctxName = account.name || name;
       const ctxTag  = account.tag  || tag;
@@ -817,11 +1119,149 @@
       // Make sure preview and code are up to date the first time we land here.
       renderCrosshair();
     }
+    if (name === 'maps') {
+      ensureMapsLoaded();
+    }
   }
   tabsBar.addEventListener('click', (e) => {
     const tab = e.target.closest('.tab');
     if (!tab) return;
     setView(tab.dataset.view);
+  });
+
+  // ---- Maps view -----------------------------------------------------
+  // Fetched once from valorant-api.com on first visit, then cached in
+  // localStorage for a week (rare data churn, low cost). The grid shows
+  // every standard map — clicking a card opens a detail panel with the
+  // splash + callouts image and your personal W/L on that map.
+  const STORAGE_MAPS_CACHE = 'evz-maps-cache-v1';
+  const MAPS_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  let mapsList = null;
+  let mapsLoadingPromise = null;
+
+  async function ensureMapsLoaded() {
+    if (mapsList) { renderMapsGrid(); return; }
+    if (mapsLoadingPromise) return mapsLoadingPromise;
+    // Try cache first
+    try {
+      const c = JSON.parse(localStorage.getItem(STORAGE_MAPS_CACHE) || 'null');
+      if (c && c.at && (Date.now() - c.at) < MAPS_CACHE_TTL_MS && Array.isArray(c.data)) {
+        mapsList = c.data;
+        renderMapsGrid();
+        return;
+      }
+    } catch {}
+    mapsLoadingPromise = (async () => {
+      try {
+        const r = await fetch('https://valorant-api.com/v1/maps');
+        const j = await r.json();
+        const all = (j && j.data) || [];
+        // Filter out non-playable internal maps (Range / The Range / no mapUrl)
+        const playable = all.filter((m) =>
+          m && m.displayName && m.mapUrl && /^\/Game\/Maps\//.test(m.mapUrl)
+            && !/range/i.test(m.displayName)
+            && !/basic/i.test(m.displayName)
+        );
+        mapsList = playable;
+        try {
+          localStorage.setItem(STORAGE_MAPS_CACHE, JSON.stringify({ at: Date.now(), data: playable }));
+        } catch {}
+        renderMapsGrid();
+      } catch (e) {
+        console.warn('[evz] maps fetch failed', e);
+        const grid = document.getElementById('maps-grid');
+        grid.innerHTML = '<div class="maps-empty">Couldn’t load map data. Check your connection.</div>';
+      } finally {
+        mapsLoadingPromise = null;
+      }
+    })();
+    return mapsLoadingPromise;
+  }
+
+  function getPersonalMapStats(mapName) {
+    if (!lastCtx || !window.__lastMatches) return null;
+    const matches = window.__lastMatches;
+    let wins = 0, losses = 0, draws = 0;
+    for (const m of matches) {
+      const md = m.metadata || {};
+      const mn = (md.map?.name || md.map || '').toLowerCase();
+      if (mn !== mapName.toLowerCase()) continue;
+      const self = findSelf(m, lastCtx.puuid);
+      if (!self) continue;
+      const r = matchResult(m, self);
+      if (r === 'win') wins++;
+      else if (r === 'loss') losses++;
+      else if (r === 'draw') draws++;
+    }
+    const played = wins + losses + draws;
+    if (!played) return null;
+    return { wins, losses, draws, played, winrate: (wins + losses) ? wins / (wins + losses) : 0 };
+  }
+
+  function renderMapsGrid() {
+    const grid = document.getElementById('maps-grid');
+    const countEl = document.getElementById('maps-count');
+    const detail = document.getElementById('map-detail');
+    if (detail) detail.hidden = true;
+    if (!mapsList || !mapsList.length) {
+      grid.innerHTML = '<div class="maps-empty">No maps loaded yet.</div>';
+      return;
+    }
+    countEl.textContent = String(mapsList.length);
+    grid.innerHTML = mapsList.map((m) => {
+      const stats = getPersonalMapStats(m.displayName);
+      let statHtml = '';
+      if (stats) {
+        const wrPct = Math.round(stats.winrate * 100);
+        const cls = wrPct >= 55 ? 'win' : wrPct <= 45 ? 'loss' : '';
+        statHtml = `<span class="map-card-stats ${cls}">${stats.wins}W ${stats.losses}L</span>`;
+      }
+      return `
+        <div class="map-card" data-map="${esc(m.displayName)}">
+          ${m.splash ? `<img class="map-card-img" src="${esc(m.splash)}" alt="" loading="lazy"/>` : ''}
+          <div class="map-card-overlay"></div>
+          ${statHtml}
+          <div class="map-card-name">${esc(m.displayName)}</div>
+        </div>
+      `;
+    }).join('');
+    grid.style.display = 'grid';
+    // Bind click handlers
+    grid.querySelectorAll('.map-card').forEach((card) => {
+      card.addEventListener('click', () => openMapDetail(card.dataset.map));
+    });
+  }
+
+  function openMapDetail(mapName) {
+    const m = mapsList?.find((x) => x.displayName === mapName);
+    if (!m) return;
+    const grid = document.getElementById('maps-grid');
+    const detail = document.getElementById('map-detail');
+    grid.style.display = 'none';
+    detail.hidden = false;
+    document.getElementById('map-detail-name').textContent = m.displayName;
+    document.getElementById('map-detail-coords').textContent = m.coordinates || '';
+    const splashEl = document.getElementById('map-detail-splash');
+    if (m.splash) splashEl.src = m.splash; else splashEl.removeAttribute('src');
+    const calloutsEl = document.getElementById('map-detail-callouts');
+    if (m.displayIcon) calloutsEl.src = m.displayIcon;
+    else if (m.listViewIcon) calloutsEl.src = m.listViewIcon;
+    else calloutsEl.removeAttribute('src');
+    const stats = getPersonalMapStats(mapName);
+    const statsBlock = document.getElementById('map-detail-stats');
+    if (stats) {
+      statsBlock.hidden = false;
+      document.getElementById('map-detail-played').textContent = String(stats.played);
+      document.getElementById('map-detail-wl').textContent = `${stats.wins}–${stats.losses}`;
+      document.getElementById('map-detail-wr').textContent = `${Math.round(stats.winrate * 100)}%`;
+    } else {
+      statsBlock.hidden = true;
+    }
+    detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  document.getElementById('map-detail-back').addEventListener('click', () => {
+    document.getElementById('map-detail').hidden = true;
+    document.getElementById('maps-grid').style.display = 'grid';
   });
 
   // ---- Primary account (auto-load on launch) -------------------------
