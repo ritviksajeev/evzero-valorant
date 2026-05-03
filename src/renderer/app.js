@@ -20,6 +20,9 @@
   const STORAGE_FAVS    = 'evz-overlay-favs';
   const STORAGE_MODE    = 'evz-overlay-mode';
   const STORAGE_NOTIFY  = 'evz-overlay-notify';
+  const STORAGE_PRIMARY = 'evz-overlay-primary';   // {name, tag, region}
+  const STORAGE_VIEW    = 'evz-overlay-view';      // 'tracker' | 'crosshair'
+  const STORAGE_XH      = 'evz-overlay-xh';        // crosshair config
 
   const LIVE_INTERVAL_MS = 30_000;
 
@@ -779,23 +782,361 @@
     if (liveMode && !document.hidden) { livePoll(); refreshCountdown(); }
   });
 
+  // ---- View tabs -----------------------------------------------------
+  const tabsBar = document.getElementById('tabs');
+  function setView(name) {
+    document.querySelectorAll('.tab').forEach((t) =>
+      t.classList.toggle('active', t.dataset.view === name)
+    );
+    document.querySelectorAll('.view').forEach((v) =>
+      v.classList.toggle('active', v.dataset.view === name)
+    );
+    localStorage.setItem(STORAGE_VIEW, name);
+    if (name === 'crosshair') {
+      // Make sure preview and code are up to date the first time we land here.
+      renderCrosshair();
+    }
+  }
+  tabsBar.addEventListener('click', (e) => {
+    const tab = e.target.closest('.tab');
+    if (!tab) return;
+    setView(tab.dataset.view);
+  });
+
+  // ---- Primary account (auto-load on launch) -------------------------
+  const setPrimaryName = document.getElementById('set-primary-name');
+  const setPrimaryTag  = document.getElementById('set-primary-tag');
+  const setPrimaryRegion = document.getElementById('set-primary-region');
+  const setPrimarySave = document.getElementById('set-primary-save');
+
+  function readPrimary() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_PRIMARY) || 'null'); }
+    catch { return null; }
+  }
+  const primaryInit = readPrimary();
+  if (primaryInit) {
+    setPrimaryName.value = primaryInit.name || '';
+    setPrimaryTag.value  = primaryInit.tag  || '';
+    if ([...setPrimaryRegion.options].some((o) => o.value === primaryInit.region)) {
+      setPrimaryRegion.value = primaryInit.region;
+    }
+  }
+  setPrimarySave.addEventListener('click', () => {
+    const n = setPrimaryName.value.trim();
+    const t = setPrimaryTag.value.trim();
+    const r = setPrimaryRegion.value;
+    if (n.length < 3 || t.length < 3) { toast('Enter Name#Tag'); return; }
+    localStorage.setItem(STORAGE_PRIMARY, JSON.stringify({ name: n, tag: t, region: r }));
+    setPrimarySave.classList.add('saved');
+    setPrimarySave.textContent = 'Saved ✓';
+    setTimeout(() => {
+      setPrimarySave.classList.remove('saved');
+      setPrimarySave.textContent = 'Save as default';
+    }, 1400);
+    toast('Default account saved');
+    // Pre-fill the search row with the primary so the user sees it loaded.
+    nameInput.value = n;
+    tagInput.value = t;
+    if ([...regionSelect.options].some((o) => o.value === r)) regionSelect.value = r;
+    runSearch(n, t, r);
+  });
+
+  // ---- Crosshair builder ---------------------------------------------
+  // Single state object; UI inputs read into and write from this.
+  // Generates a Valorant share-code in the standard format community has
+  // reverse-engineered. Live SVG preview re-renders on every state change.
+  const xhDefault = {
+    color: '#FFFFFF',
+    outline: true, outlineThick: 1, outlineOp: 0.5,
+    dot: false, dotThick: 2, dotOp: 1,
+    innerShow: true, innerThick: 2, innerLen: 6, innerOff: 3, innerOp: 1,
+    outerShow: false, outerThick: 2, outerLen: 2, outerOff: 10, outerOp: 0.35,
+  };
+  let xh = (() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(STORAGE_XH) || 'null');
+      return stored ? Object.assign({}, xhDefault, stored) : { ...xhDefault };
+    } catch { return { ...xhDefault }; }
+  })();
+
+  const xhPresets = {
+    default: { ...xhDefault },
+    dot: { ...xhDefault, innerShow: false, dot: true, dotThick: 3, dotOp: 1 },
+    plus: { ...xhDefault, innerThick: 1, innerLen: 4, innerOff: 0, outline: false, dot: true, dotThick: 1 },
+    open: { ...xhDefault, innerLen: 8, innerOff: 6 },
+    tarik: { ...xhDefault, color: '#00FF00', innerThick: 1, innerLen: 4, innerOff: 2, outline: true, outlineThick: 1, outlineOp: 1, dot: false, outerShow: false },
+    tenz: { ...xhDefault, color: '#00FFFF', innerThick: 1, innerLen: 6, innerOff: 3, outline: true, outlineThick: 1, outlineOp: 1, dot: true, dotThick: 1 },
+  };
+
+  // Wire each control to xh state
+  function bindRange(id, key, fmt = (v) => Number(v).toString()) {
+    const el = document.getElementById(id);
+    const out = document.getElementById(id + '-val');
+    el.value = xh[key];
+    if (out) out.textContent = fmt(xh[key]);
+    el.addEventListener('input', () => {
+      xh[key] = parseFloat(el.value);
+      if (out) out.textContent = fmt(xh[key]);
+      onXhChange();
+    });
+  }
+  function bindCheck(id, key) {
+    const el = document.getElementById(id);
+    el.checked = !!xh[key];
+    el.addEventListener('change', () => { xh[key] = el.checked; onXhChange(); });
+  }
+  function bindColor(id, key) {
+    const el = document.getElementById(id);
+    el.value = xh[key];
+    el.addEventListener('input', () => { xh[key] = el.value; onXhChange(); });
+  }
+  bindColor('xh-color', 'color');
+  bindCheck('xh-outline', 'outline');
+  bindRange('xh-outline-thick', 'outlineThick');
+  bindRange('xh-outline-op',    'outlineOp', (v) => Number(v).toFixed(2));
+  bindCheck('xh-dot', 'dot');
+  bindRange('xh-dot-thick', 'dotThick');
+  bindRange('xh-dot-op',    'dotOp', (v) => Number(v).toFixed(2));
+  bindCheck('xh-inner-show', 'innerShow');
+  bindRange('xh-inner-thick',  'innerThick');
+  bindRange('xh-inner-length', 'innerLen');
+  bindRange('xh-inner-offset', 'innerOff');
+  bindRange('xh-inner-op',     'innerOp', (v) => Number(v).toFixed(2));
+  bindCheck('xh-outer-show', 'outerShow');
+  bindRange('xh-outer-thick',  'outerThick');
+  bindRange('xh-outer-length', 'outerLen');
+  bindRange('xh-outer-offset', 'outerOff');
+  bindRange('xh-outer-op',     'outerOp', (v) => Number(v).toFixed(2));
+
+  // Crosshair category sub-tabs
+  const xhCatTabs = document.getElementById('xh-cat-tabs');
+  xhCatTabs.addEventListener('click', (e) => {
+    const t = e.target.closest('.xh-cat-tab');
+    if (!t) return;
+    xhCatTabs.querySelectorAll('.xh-cat-tab').forEach((x) =>
+      x.classList.toggle('active', x === t)
+    );
+    document.querySelectorAll('.xh-cat').forEach((c) => {
+      c.hidden = (c.dataset.cat !== t.dataset.cat);
+    });
+  });
+
+  // Presets
+  document.getElementById('xh-presets').addEventListener('click', (e) => {
+    const b = e.target.closest('.xh-preset');
+    if (!b) return;
+    xh = { ...xhPresets[b.dataset.preset] };
+    syncControlsFromState();
+    onXhChange();
+    toast(`Preset: ${b.textContent.trim()}`);
+  });
+
+  function syncControlsFromState() {
+    document.getElementById('xh-color').value = xh.color;
+    document.getElementById('xh-outline').checked = !!xh.outline;
+    document.getElementById('xh-outline-thick').value = xh.outlineThick;
+    document.getElementById('xh-outline-thick-val').textContent = xh.outlineThick;
+    document.getElementById('xh-outline-op').value = xh.outlineOp;
+    document.getElementById('xh-outline-op-val').textContent = xh.outlineOp.toFixed(2);
+    document.getElementById('xh-dot').checked = !!xh.dot;
+    document.getElementById('xh-dot-thick').value = xh.dotThick;
+    document.getElementById('xh-dot-thick-val').textContent = xh.dotThick;
+    document.getElementById('xh-dot-op').value = xh.dotOp;
+    document.getElementById('xh-dot-op-val').textContent = xh.dotOp.toFixed(2);
+    document.getElementById('xh-inner-show').checked = !!xh.innerShow;
+    document.getElementById('xh-inner-thick').value = xh.innerThick;
+    document.getElementById('xh-inner-thick-val').textContent = xh.innerThick;
+    document.getElementById('xh-inner-length').value = xh.innerLen;
+    document.getElementById('xh-inner-length-val').textContent = xh.innerLen;
+    document.getElementById('xh-inner-offset').value = xh.innerOff;
+    document.getElementById('xh-inner-offset-val').textContent = xh.innerOff;
+    document.getElementById('xh-inner-op').value = xh.innerOp;
+    document.getElementById('xh-inner-op-val').textContent = xh.innerOp.toFixed(2);
+    document.getElementById('xh-outer-show').checked = !!xh.outerShow;
+    document.getElementById('xh-outer-thick').value = xh.outerThick;
+    document.getElementById('xh-outer-thick-val').textContent = xh.outerThick;
+    document.getElementById('xh-outer-length').value = xh.outerLen;
+    document.getElementById('xh-outer-length-val').textContent = xh.outerLen;
+    document.getElementById('xh-outer-offset').value = xh.outerOff;
+    document.getElementById('xh-outer-offset-val').textContent = xh.outerOff;
+    document.getElementById('xh-outer-op').value = xh.outerOp;
+    document.getElementById('xh-outer-op-val').textContent = xh.outerOp.toFixed(2);
+  }
+
+  // Render the crosshair as an SVG. Coordinate space is centered at 0,0 with
+  // ±100 viewBox; pixel sizes here scale relative to the preview area.
+  function renderCrosshair() {
+    const svg = document.getElementById('xh-preview-svg');
+    if (!svg) return;
+    const out = [];
+    const c = xh.color;
+    const ot = xh.outlineThick;
+    const op = xh.outlineOp;
+    const drawLine = (x1, y1, x2, y2, thickness, opacity) => {
+      // Outline pass first (thicker, semi-transparent black behind), then fill
+      if (xh.outline && ot > 0) {
+        out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#000" stroke-width="${thickness + ot * 2}" stroke-opacity="${op}" stroke-linecap="square"/>`);
+      }
+      out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${thickness}" stroke-opacity="${opacity}" stroke-linecap="square"/>`);
+    };
+
+    if (xh.innerShow) {
+      const t = xh.innerThick;
+      const len = xh.innerLen;
+      const off = xh.innerOff;
+      const o = xh.innerOp;
+      drawLine(-(off + len), 0, -off, 0, t, o);  // left
+      drawLine(off, 0, off + len, 0, t, o);      // right
+      drawLine(0, -(off + len), 0, -off, t, o);  // top
+      drawLine(0, off, 0, off + len, t, o);      // bottom
+    }
+    if (xh.outerShow) {
+      const t = xh.outerThick;
+      const len = xh.outerLen;
+      const off = xh.outerOff;
+      const o = xh.outerOp;
+      drawLine(-(off + len), 0, -off, 0, t, o);
+      drawLine(off, 0, off + len, 0, t, o);
+      drawLine(0, -(off + len), 0, -off, t, o);
+      drawLine(0, off, 0, off + len, t, o);
+    }
+    if (xh.dot) {
+      const r = xh.dotThick / 2;
+      if (xh.outline && ot > 0) {
+        out.push(`<rect x="${-r - ot}" y="${-r - ot}" width="${(r + ot) * 2}" height="${(r + ot) * 2}" fill="#000" fill-opacity="${op}"/>`);
+      }
+      out.push(`<rect x="${-r}" y="${-r}" width="${r * 2}" height="${r * 2}" fill="${c}" fill-opacity="${xh.dotOp}"/>`);
+    }
+    svg.innerHTML = out.join('');
+  }
+
+  // Generate a Valorant share code from xh state.
+  // Format pieces (community-known): primary profile prefix, then key-value
+  // pairs separated by `;`. We emit only the keys that diverge from defaults
+  // so the code stays compact (matches what in-game settings exports).
+  function generateCode() {
+    const colorHex = xh.color.replace('#', '').toUpperCase();
+    // Valorant uses a custom-color code "u" with hex. "h;1" enables outline,
+    // "0t/0l/0o/0a" inner, "1b" outer toggle, "d/dt/da" dot toggle/thickness/opacity
+    const parts = ['0', 'P'];
+    parts.push('c', '8');                      // 8 = custom
+    parts.push('u', colorHex + 'FF');          // alpha appended
+    parts.push('h', xh.outline ? '0' : '1');   // 0 = show outline, 1 = hide (Riot convention)
+    parts.push('o', xh.outlineOp.toFixed(2));
+    parts.push('t', String(xh.outlineThick));
+    parts.push('d', xh.dot ? '1' : '0');
+    if (xh.dot) {
+      parts.push('z', String(xh.dotThick));
+      parts.push('a', xh.dotOp.toFixed(2));
+    }
+    parts.push('0b', xh.innerShow ? '1' : '0');
+    if (xh.innerShow) {
+      parts.push('0t', String(xh.innerThick));
+      parts.push('0l', String(xh.innerLen));
+      parts.push('0o', String(xh.innerOff));
+      parts.push('0a', xh.innerOp.toFixed(2));
+      parts.push('0f', '0');
+    }
+    parts.push('1b', xh.outerShow ? '1' : '0');
+    if (xh.outerShow) {
+      parts.push('1t', String(xh.outerThick));
+      parts.push('1l', String(xh.outerLen));
+      parts.push('1o', String(xh.outerOff));
+      parts.push('1a', xh.outerOp.toFixed(2));
+      parts.push('1f', '0');
+    }
+    return parts.join(';');
+  }
+
+  function onXhChange() {
+    localStorage.setItem(STORAGE_XH, JSON.stringify(xh));
+    renderCrosshair();
+    document.getElementById('xh-code').value = generateCode();
+    // If the overlay is currently shown, push the new config to it.
+    evz.crosshairOverlayUpdate?.(xh);
+  }
+
+  // Copy code button
+  const xhCopy = document.getElementById('xh-copy');
+  xhCopy.addEventListener('click', async () => {
+    const code = document.getElementById('xh-code').value;
+    try {
+      await navigator.clipboard.writeText(code);
+      xhCopy.classList.add('copied');
+      xhCopy.textContent = 'Copied';
+      toast('Crosshair code copied — paste in Valorant settings');
+      setTimeout(() => {
+        xhCopy.classList.remove('copied');
+        xhCopy.textContent = 'Copy';
+      }, 1500);
+    } catch {
+      toast('Copy failed');
+    }
+  });
+
+  // Overlay toggle (separate transparent click-through window)
+  const xhOverlayBtn = document.getElementById('xh-overlay-toggle');
+  const xhOverlayLabel = document.getElementById('xh-overlay-label');
+  let xhOverlayShown = false;
+  if (evz.crosshairOverlayIsShown) {
+    evz.crosshairOverlayIsShown().then((on) => updateOverlayBtn(!!on));
+  }
+  function updateOverlayBtn(on) {
+    xhOverlayShown = on;
+    xhOverlayBtn.classList.toggle('active', on);
+    xhOverlayLabel.textContent = on ? 'Overlay ON' : 'Show overlay';
+  }
+  xhOverlayBtn.addEventListener('click', async () => {
+    if (xhOverlayShown) {
+      await evz.crosshairOverlayHide?.();
+      updateOverlayBtn(false);
+      toast('Overlay hidden');
+    } else {
+      await evz.crosshairOverlayShow?.(xh);
+      updateOverlayBtn(true);
+      toast('Overlay shown — click-through, drag here to keep editing');
+    }
+  });
+
+  // Initial render
+  syncControlsFromState();
+  renderCrosshair();
+  document.getElementById('xh-code').value = generateCode();
+
   // ---- Bootstrap -----------------------------------------------------
   renderFavs();
+
+  // Default view
+  const startView = localStorage.getItem(STORAGE_VIEW) || 'tracker';
+  setView(startView);
+
   const lastRegion = localStorage.getItem(STORAGE_REGION) || 'ap';
   if ([...regionSelect.options].some((o) => o.value === lastRegion)) {
     regionSelect.value = lastRegion;
   }
-  const lastRiot = localStorage.getItem(STORAGE_LAST);
-  if (lastRiot && lastRiot.includes('#')) {
-    const [n, t] = lastRiot.split('#').map((s) => s.trim());
-    if (n && t) {
-      nameInput.value = n;
-      tagInput.value = t;
-      setTimeout(() => runSearch(n, t, regionSelect.value), 200);
+
+  // Auto-load order: primary account (if set) > last searched > nothing
+  const primary = readPrimary();
+  if (primary && primary.name && primary.tag) {
+    nameInput.value = primary.name;
+    tagInput.value  = primary.tag;
+    if ([...regionSelect.options].some((o) => o.value === primary.region)) {
+      regionSelect.value = primary.region;
+    }
+    setTimeout(() => runSearch(primary.name, primary.tag, regionSelect.value), 200);
+  } else {
+    const lastRiot = localStorage.getItem(STORAGE_LAST);
+    if (lastRiot && lastRiot.includes('#')) {
+      const [n, t] = lastRiot.split('#').map((s) => s.trim());
+      if (n && t) {
+        nameInput.value = n;
+        tagInput.value = t;
+        setTimeout(() => runSearch(n, t, regionSelect.value), 200);
+      } else {
+        setStatus('idle', 'Idle');
+      }
     } else {
       setStatus('idle', 'Idle');
     }
-  } else {
-    setStatus('idle', 'Idle');
   }
 })();

@@ -39,6 +39,25 @@
 
   <!-- Settings dropdown — anchored under the gear button -->
   <div class="settings-pop" id="settings-pop" hidden>
+    <div class="settings-section-label">Your Riot ID</div>
+    <div class="settings-row settings-riot">
+      <input id="set-primary-name" class="settings-input" type="text" placeholder="Name" maxlength="16" spellcheck="false"/>
+      <span class="settings-hash">#</span>
+      <input id="set-primary-tag" class="settings-input settings-input-tag" type="text" placeholder="TAG" maxlength="5" spellcheck="false"/>
+    </div>
+    <div class="settings-row settings-riot">
+      <select id="set-primary-region" class="settings-input settings-input-region">
+        <option value="ap">AP</option>
+        <option value="na">NA</option>
+        <option value="eu">EU</option>
+        <option value="kr">KR</option>
+        <option value="latam">LATAM</option>
+        <option value="br">BR</option>
+      </select>
+      <button id="set-primary-save" class="settings-btn" type="button">Save as default</button>
+    </div>
+    <div class="settings-hint">Auto-loads when you open the app. Search bar still looks up other players.</div>
+    <div class="settings-divider"></div>
     <div class="settings-row">
       <label class="settings-label">
         <input type="checkbox" id="set-pin"/>
@@ -68,7 +87,16 @@
     </div>
   </div>
 
+  <!-- View tabs — switches between Tracker, Crosshair (and future views) -->
+  <nav class="tabs" id="tabs" aria-label="Views">
+    <button class="tab active" data-view="tracker">Tracker</button>
+    <button class="tab" data-view="crosshair">Crosshair</button>
+  </nav>
+
   <main class="content" id="content">
+
+    <!-- View: Tracker -->
+    <section class="view view-tracker active" data-view="tracker">
 
     <!-- Saved players quick chips -->
     <section class="favs" id="favs" hidden>
@@ -180,6 +208,138 @@
       </div>
       <div class="matches-list" id="matches-list"></div>
     </section>
+
+    </section><!-- /view-tracker -->
+
+    <!-- View: Crosshair builder -->
+    <section class="view view-crosshair" data-view="crosshair">
+      <!-- Live preview area, dark background mimicking a sight scene -->
+      <div class="xh-preview" id="xh-preview">
+        <svg class="xh-preview-svg" id="xh-preview-svg" viewBox="-100 -100 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+      </div>
+
+      <!-- Tabs across crosshair categories -->
+      <div class="xh-cat-tabs" id="xh-cat-tabs">
+        <button class="xh-cat-tab active" data-cat="general">General</button>
+        <button class="xh-cat-tab" data-cat="inner">Inner</button>
+        <button class="xh-cat-tab" data-cat="outer">Outer</button>
+        <button class="xh-cat-tab" data-cat="presets">Presets</button>
+      </div>
+
+      <div class="xh-cat" data-cat="general">
+        <div class="xh-row">
+          <label class="xh-label">Color</label>
+          <input type="color" id="xh-color" value="#FFFFFF"/>
+        </div>
+        <div class="xh-row">
+          <label class="xh-label">Outline</label>
+          <input type="checkbox" id="xh-outline" checked/>
+        </div>
+        <div class="xh-row" data-dep="outline">
+          <label class="xh-label">Outline thickness</label>
+          <input type="range" id="xh-outline-thick" min="0" max="6" step="1" value="1"/>
+          <span class="xh-num" id="xh-outline-thick-val">1</span>
+        </div>
+        <div class="xh-row" data-dep="outline">
+          <label class="xh-label">Outline opacity</label>
+          <input type="range" id="xh-outline-op" min="0" max="1" step="0.05" value="0.5"/>
+          <span class="xh-num" id="xh-outline-op-val">0.50</span>
+        </div>
+        <div class="xh-row">
+          <label class="xh-label">Center dot</label>
+          <input type="checkbox" id="xh-dot"/>
+        </div>
+        <div class="xh-row" data-dep="dot">
+          <label class="xh-label">Dot thickness</label>
+          <input type="range" id="xh-dot-thick" min="1" max="6" step="1" value="2"/>
+          <span class="xh-num" id="xh-dot-thick-val">2</span>
+        </div>
+        <div class="xh-row" data-dep="dot">
+          <label class="xh-label">Dot opacity</label>
+          <input type="range" id="xh-dot-op" min="0" max="1" step="0.05" value="1"/>
+          <span class="xh-num" id="xh-dot-op-val">1.00</span>
+        </div>
+      </div>
+
+      <div class="xh-cat" data-cat="inner" hidden>
+        <div class="xh-row">
+          <label class="xh-label">Show inner lines</label>
+          <input type="checkbox" id="xh-inner-show" checked/>
+        </div>
+        <div class="xh-row" data-dep="inner-show">
+          <label class="xh-label">Thickness</label>
+          <input type="range" id="xh-inner-thick" min="1" max="10" step="1" value="2"/>
+          <span class="xh-num" id="xh-inner-thick-val">2</span>
+        </div>
+        <div class="xh-row" data-dep="inner-show">
+          <label class="xh-label">Length</label>
+          <input type="range" id="xh-inner-length" min="0" max="20" step="1" value="6"/>
+          <span class="xh-num" id="xh-inner-length-val">6</span>
+        </div>
+        <div class="xh-row" data-dep="inner-show">
+          <label class="xh-label">Offset</label>
+          <input type="range" id="xh-inner-offset" min="0" max="20" step="1" value="3"/>
+          <span class="xh-num" id="xh-inner-offset-val">3</span>
+        </div>
+        <div class="xh-row" data-dep="inner-show">
+          <label class="xh-label">Opacity</label>
+          <input type="range" id="xh-inner-op" min="0" max="1" step="0.05" value="1"/>
+          <span class="xh-num" id="xh-inner-op-val">1.00</span>
+        </div>
+      </div>
+
+      <div class="xh-cat" data-cat="outer" hidden>
+        <div class="xh-row">
+          <label class="xh-label">Show outer lines</label>
+          <input type="checkbox" id="xh-outer-show"/>
+        </div>
+        <div class="xh-row" data-dep="outer-show">
+          <label class="xh-label">Thickness</label>
+          <input type="range" id="xh-outer-thick" min="1" max="10" step="1" value="2"/>
+          <span class="xh-num" id="xh-outer-thick-val">2</span>
+        </div>
+        <div class="xh-row" data-dep="outer-show">
+          <label class="xh-label">Length</label>
+          <input type="range" id="xh-outer-length" min="0" max="20" step="1" value="2"/>
+          <span class="xh-num" id="xh-outer-length-val">2</span>
+        </div>
+        <div class="xh-row" data-dep="outer-show">
+          <label class="xh-label">Offset</label>
+          <input type="range" id="xh-outer-offset" min="0" max="40" step="1" value="10"/>
+          <span class="xh-num" id="xh-outer-offset-val">10</span>
+        </div>
+        <div class="xh-row" data-dep="outer-show">
+          <label class="xh-label">Opacity</label>
+          <input type="range" id="xh-outer-op" min="0" max="1" step="0.05" value="0.35"/>
+          <span class="xh-num" id="xh-outer-op-val">0.35</span>
+        </div>
+      </div>
+
+      <div class="xh-cat" data-cat="presets" hidden>
+        <div class="xh-presets" id="xh-presets">
+          <button class="xh-preset" data-preset="default">Default</button>
+          <button class="xh-preset" data-preset="dot">Dot only</button>
+          <button class="xh-preset" data-preset="plus">Tight plus</button>
+          <button class="xh-preset" data-preset="open">Open cross</button>
+          <button class="xh-preset" data-preset="tarik">tarik</button>
+          <button class="xh-preset" data-preset="tenz">TenZ</button>
+        </div>
+      </div>
+
+      <div class="xh-actions">
+        <div class="xh-code-wrap">
+          <input type="text" class="xh-code" id="xh-code" readonly/>
+          <button class="xh-copy" id="xh-copy" type="button">Copy</button>
+        </div>
+        <div class="xh-overlay-row">
+          <button class="xh-overlay-btn" id="xh-overlay-toggle" type="button">
+            <span class="xh-overlay-dot"></span>
+            <span id="xh-overlay-label">Show overlay</span>
+          </button>
+          <span class="xh-overlay-hint">Click-through window over the screen — Vanguard-safe.</span>
+        </div>
+      </div>
+    </section><!-- /view-crosshair -->
 
   </main>
 

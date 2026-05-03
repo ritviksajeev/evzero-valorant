@@ -36,6 +36,18 @@ contextBridge.exposeInMainWorld('evzero', {
   // Native OS notification — used when live mode detects a new match.
   notify: (opts) => ipcRenderer.invoke('evzero:notify', opts),
 
+  // Crosshair overlay (separate transparent click-through window)
+  crosshairOverlayShow:    (cfg) => ipcRenderer.invoke('evzero:crosshair-overlay-show', cfg),
+  crosshairOverlayHide:    ()    => ipcRenderer.invoke('evzero:crosshair-overlay-hide'),
+  crosshairOverlayUpdate:  (cfg) => ipcRenderer.invoke('evzero:crosshair-overlay-update', cfg),
+  crosshairOverlayIsShown: ()    => ipcRenderer.invoke('evzero:crosshair-overlay-is-shown'),
+  // Listener used by the OVERLAY renderer to receive config pushes.
+  onCrosshairConfig: (cb) => {
+    const handler = (_e, cfg) => cb(cfg);
+    ipcRenderer.on('evzero:crosshair-config', handler);
+    return () => ipcRenderer.removeListener('evzero:crosshair-config', handler);
+  },
+
   // Auto-launch toggle
   getAutoLaunch: () => ipcRenderer.invoke('evzero:get-auto-launch'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('evzero:set-auto-launch', enabled),

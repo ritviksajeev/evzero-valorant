@@ -44,6 +44,7 @@ const HUD_W = 300;
 const HUD_H = 150;
 
 let mainWindow = null;
+let crosshairOverlay = null; // Separate transparent click-through window
 let tray = null;
 let isQuitting = false;
 let isPinned = true; // alwaysOnTop default — toggle via tray or in-app
@@ -130,6 +131,9 @@ function toggleWindow() {
     mainWindow.hide();
   } else {
     mainWindow.show();
+    // Windows clears the always-on-top flag whenever a window is hidden and
+    // restored — re-apply it explicitly so the hotkey toggle stays "pinned".
+    if (isPinned) mainWindow.setAlwaysOnTop(true, 'floating');
     mainWindow.focus();
   }
 }
@@ -208,6 +212,11 @@ ipcMain.handle('evzero:window-get-pin',    () => isPinned);
 function setHudMode(on) {
   isHud = !!on;
   if (!mainWindow) return isHud;
+  // Hide-then-show wraps the resize so Windows doesn't flash the snap-layout
+  // size hint ("300×150") next to the cursor while the window changes shape.
+  // Also passes animate=false to setBounds for the same reason.
+  const wasVisible = mainWindow.isVisible();
+  if (wasVisible) mainWindow.hide();
   if (isHud) {
     savedNormalBounds = mainWindow.getBounds();
     const { workArea } = screen.getPrimaryDisplay();
@@ -217,15 +226,19 @@ function setHudMode(on) {
       y: workArea.y + 24,
       width: HUD_W,
       height: HUD_H,
-    }, true);
+    }, false);
     if (!isPinned) setPinned(true); // HUD always wants always-on-top
   } else {
     mainWindow.setMinimumSize(WIN_MIN_W, WIN_MIN_H);
     if (savedNormalBounds) {
-      mainWindow.setBounds(savedNormalBounds, true);
+      mainWindow.setBounds(savedNormalBounds, false);
     } else {
-      mainWindow.setSize(WIN_W, WIN_H, true);
+      mainWindow.setSize(WIN_W, WIN_H, false);
     }
+  }
+  if (wasVisible) {
+    mainWindow.show();
+    if (isPinned) mainWindow.setAlwaysOnTop(true, 'floating');
   }
   mainWindow.webContents.send('evzero:hud-changed', isHud);
   tray?.setContextMenu(buildTrayMenu());
@@ -259,6 +272,68 @@ ipcMain.handle('evzero:set-auto-launch', (_e, enabled) => {
   return app.getLoginItemSettings().openAtLogin;
 });
 ipcMain.handle('evzero:get-auto-launch', () => app.getLoginItemSettings().openAtLogin);
+
+// ---- Crosshair overlay window -------------------------------------------
+// A second BrowserWindow that's frameless, transparent, click-through, and
+// pinned. Renders the user's crosshair preview in the centre of the screen.
+// This is exactly the same Electron primitive Discord/OBS overlays use —
+// nothing reads game memory, nothing injects, no input is intercepted.
+// Click-through (`setIgnoreMouseEvents(true)`) means the window passes every
+// click straight to the app under it, so it doesn't affect gameplay.
+
+function createCrosshairOverlay() {
+  if (crosshairOverlay && !crosshairOverlay.isDestroyed()) return crosshairOverlay;
+  const { workArea } = screen.getPrimaryDisplay();
+  crosshairOverlay = new BrowserWindow({
+    width: workArea.width,
+    height: workArea.height,
+    x: workArea.x,
+    y: workArea.y,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  crosshairOverlay.setAlwaysOnTop(true, 'screen-saver');
+  crosshairOverlay.setIgnoreMouseEvents(true, { forward: false });
+  crosshairOverlay.loadFile(path.join(__dirname, '..', 'renderer', 'crosshair-overlay.html'));
+  return crosshairOverlay;
+}
+
+ipcMain.handle('evzero:crosshair-overlay-show', (_e, payload) => {
+  const w = createCrosshairOverlay();
+  w.show();
+  // Push the latest config to the overlay renderer.
+  w.webContents.send('evzero:crosshair-config', payload || null);
+  return true;
+});
+ipcMain.handle('evzero:crosshair-overlay-hide', () => {
+  if (crosshairOverlay && !crosshairOverlay.isDestroyed()) crosshairOverlay.hide();
+  return true;
+});
+ipcMain.handle('evzero:crosshair-overlay-update', (_e, payload) => {
+  if (crosshairOverlay && !crosshairOverlay.isDestroyed()) {
+    crosshairOverlay.webContents.send('evzero:crosshair-config', payload || null);
+  }
+  return true;
+});
+ipcMain.handle('evzero:crosshair-overlay-is-shown', () => {
+  return !!(crosshairOverlay && !crosshairOverlay.isDestroyed() && crosshairOverlay.isVisible());
+});
 
 // ---- App lifecycle ------------------------------------------------------
 

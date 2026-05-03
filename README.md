@@ -4,11 +4,15 @@ Compact frameless **overlay widget** for Valorant stats. Sits always-on-top alon
 
 ## Status
 
-**v0.3** — feature pass. Live polling with new-match notifications, saved players, mode filter, expandable scoreboards, settings panel, overlay HUD mode.
+**v0.4** — view tabs, crosshair builder + overlay, "Your Riot ID" auto-load, bug fixes.
 
 ## Features
 
-**Widget mode** (420×680, frameless, always-on-top)
+**Tabs** at the top of the widget switch between focused views — adds new ones over time without bloating any single panel.
+
+**Tracker view**
+
+Tracker mode (420×680, frameless, always-on-top)
 - Profile card: PFP, name, rank, peak rank, recent agent
 - Stats summary row: WR / KDA / ACS / HS%
 - Mode filter: Comp / Unrated / DM / All — re-fetches the queue on switch
@@ -16,6 +20,24 @@ Compact frameless **overlay widget** for Valorant stats. Sits always-on-top alon
 - Saved players: pin a player → quick-search chip above the search row
 - Live mode: polls every 30s, visible countdown, fresh-row pulse + native OS notification when a new match lands
 - Settings popover (gear icon): pin, launch-at-login, notifications toggle, hotkey hint, version
+
+**Crosshair view**
+
+- Settings UI (color, outline, dot, inner lines, outer lines) with live SVG preview
+- Generates a Valorant share-code string ready to paste into in-game settings
+- Six built-in presets (Default / Dot only / Tight plus / Open cross / tarik / TenZ)
+- **Optional transparent overlay window** — toggleable click-through full-screen
+  window that draws your crosshair at screen centre. Useful when you want to
+  preview without alt-tabbing into the game. Same Electron primitive Discord
+  uses for its overlay; Vanguard ignores it.
+
+**Settings popover** (gear icon)
+
+- "Your Riot ID" — set once, auto-loads on every launch (search bar still
+  looks up other players)
+- Always-on-top toggle
+- Launch at login
+- Notifications on new match
 
 **Overlay HUD mode** (300×150, even more compact)
 - Toggle from the titlebar HUD button (or tray menu)
